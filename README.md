@@ -7,9 +7,9 @@
 ![Luxon](https://img.shields.io/badge/Luxon-3.7-FF8033)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-WhatsApp bot pengingat konsumsi tablet FE harian untuk ibu hamil, lengkap dengan admin web.
+A WhatsApp bot that reminds pregnant women to take their daily FE (iron) tablet, tracks adherence, validates delivery, and manages postpartum visit reminders. Includes an admin web dashboard.
 
-## Teknologi
+## Tech stack
 
 - Node.js 18+
 - whatsapp-web.js 1.34
@@ -18,7 +18,7 @@ WhatsApp bot pengingat konsumsi tablet FE harian untuk ibu hamil, lengkap dengan
 - Luxon 3.7
 - qrcode-terminal 0.12
 
-## Menjalankan
+## Run
 
 ```bash
 npm install
@@ -26,14 +26,18 @@ cp .env.example .env
 npm start
 ```
 
-Koneksikan WhatsApp lewat QR di terminal, atau pakai kode pairing 8 digit dengan mengisi `WA_PAIRING_NUMBER` di `.env` (lihat `deploy/INSTALL.md`).
+Connect WhatsApp by scanning the QR code in the terminal, or use an 8-digit pairing code by setting `WA_PAIRING_NUMBER` in `.env` (see `deploy/INSTALL.md`).
 
-## Tes
+## Test
 
 ```bash
 npm test
 ```
 
-## Lisensi
+## Docs
 
-MIT, lihat `LICENSE`.
+Technical documentation with user flows and scenarios: [docs/technical-guide.pdf](docs/technical-guide.pdf).
+
+## License
+
+MIT, see `LICENSE`.

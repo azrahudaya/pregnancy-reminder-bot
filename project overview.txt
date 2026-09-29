@@ -1,11 +1,11 @@
-PROJECT OVERVIEW - REMINDCARE WHATSAPP BOT
+﻿PROJECT OVERVIEW - REMINDCARE WHATSAPP BOT
 
 Ringkasan
 RemindCare adalah bot WhatsApp berbasis Node.js untuk mendampingi ibu hamil.
 Fokus utamanya adalah pengingat konsumsi tablet FE harian, pencatatan jawaban
 "Sudah" atau "Belum", edukasi menjelang persalinan, validasi apakah user sudah
 melahirkan, pendataan persalinan, serta reminder kunjungan masa nifas dan
-neonatal. Bot juga punya reminder kelas ibu hamil 4 minggu setiap hari Minggu
+neonatal.
 pagi. Project juga menyediakan dashboard admin web untuk melihat data user, log
 reminder, log kunjungan, dan export CSV.
 
@@ -38,10 +38,6 @@ Struktur Project
   Dokumentasi fitur, trigger, dan flow yang sudah ada sebelumnya.
 - data backup/remindcare.db
   Backup database.
-- firebase.json dan public/index.html
-  Konfigurasi Firebase Hosting sederhana untuk redirect link materi kelas ibu
-  /minggu1, /minggu2, dan /minggu3.
-
 Cara Menjalankan
 1. Install dependency:
    npm install
@@ -117,12 +113,6 @@ Konfigurasi Environment Penting
   Masa berlaku session admin web. Default 8 jam.
 - ADMIN_WEB_COOKIE_SECURE
   Cookie secure untuk admin web. Aktif otomatis saat NODE_ENV=production.
-- MOTHER_CLASS_BASE_URL
-  Host link materi kelas ibu. Default https://remindcares.web.app.
-- MOTHER_CLASS_WINDOW_START_HOUR
-  Jam awal window reminder kelas ibu hari Minggu. Default 9.
-- MOTHER_CLASS_WINDOW_END_HOUR
-  Jam akhir window reminder kelas ibu hari Minggu. Default 12.
 - REMINDER_LOG_RETENTION_DAYS
   Retensi log reminder harian. Default 180 hari.
 - POLL_RETRY_BASE_DELAY_MS
@@ -281,39 +271,6 @@ Alur:
 5. Bot menyimpan poll_message_id untuk tracking jawaban.
 6. Maksimal satu kunjungan dikirim per siklus scheduler agar chat tidak penuh.
 7. Jika pengiriman poll gagal, retry mengikuti exponential backoff.
-
-Flow Reminder Kelas Ibu
-Trigger:
-- User sudah selesai onboarding/registrasi dan reminder aktif.
-- Scheduler berjalan pada hari Minggu dalam range 09:00 sampai 12:00 WIB.
-- Reminder kelas ibu minggu tersebut belum dikirim.
-- Program belum selesai.
-
-Alur:
-1. Saat onboarding selesai, state reminder kelas ibu diaktifkan untuk user.
-2. Minggu 1 bot bertanya apakah Ibu sudah pernah mengikuti kelas ibu.
-3. Jika jawab "Sudah", bot menanyakan lokasi kelas dan jumlah keikutsertaan
-   1 sampai 4 kali.
-4. Jika jumlahnya 4, bot mengucapkan selamat dan program kelas ibu selesai.
-5. Jika jumlahnya 1 sampai 3, bot mengirim materi minggu 1 dan melanjutkan
-   reminder kelas ibu pada hari Minggu berikutnya.
-6. Jika jawab "Belum", bot menanyakan wilayah cakupan Ibu lalu mengirim materi
-   minggu 1.
-7. Minggu 2 bot mengirim pesan pertemuan kedua dan link materi minggu 2.
-8. Minggu 3 bot mengirim pesan pertemuan ketiga dan link materi minggu 3.
-9. Minggu 4 bot mengingatkan Ibu datang langsung ke faskes sekitar yang
-   membuka kelas ibu, seperti posyandu, puskesmas, klinik, atau faskes lain.
-10. Setelah minggu 4, program reminder kelas ibu ditandai selesai.
-
-Link materi kelas ibu:
-- https://remindcares.web.app/minggu1 redirect ke Google Drive pertemuan 1.
-- https://remindcares.web.app/minggu2 redirect ke Google Drive pertemuan 2.
-- https://remindcares.web.app/minggu3 redirect ke Google Drive pertemuan 3.
-Redirect tersedia di dua tempat:
-- Route Express di repo bot.
-- Konfigurasi Firebase Hosting di firebase.json jika domain web.app dideploy
-  dari repo ini.
-
 Flow Jawaban Kunjungan Postpartum
 Trigger:
 - User vote pada poll kunjungan postpartum.

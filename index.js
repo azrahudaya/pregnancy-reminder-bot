@@ -42,23 +42,6 @@ const DELIVERY_VALIDATION_POLL_OPTIONS = [
   "Belum melahirkan",
 ];
 const DELIVERY_ARTICLE_URL = "https://remindcares.web.app";
-const MOTHER_CLASS_BASE_URL = (
-  process.env.MOTHER_CLASS_BASE_URL || "https://remindcares.web.app"
-).replace(/\/+$/, "");
-const MOTHER_CLASS_REDIRECTS = {
-  minggu1:
-    "https://drive.google.com/drive/folders/17AIFis9EAt-cOJ87e6MqEHe5FsI5qx7w?usp=sharing",
-  minggu2:
-    "https://drive.google.com/drive/folders/1u8JOVNREvys7QQXcsRlLcz_efs7tx54w?usp=sharing",
-  minggu3:
-    "https://drive.google.com/drive/folders/1yNNdbUzAh-3IdCRF61yU-FjnJf9YAdRS?usp=sharing",
-};
-const MOTHER_CLASS_WINDOW_START_HOUR = Number(
-  process.env.MOTHER_CLASS_WINDOW_START_HOUR || 9,
-);
-const MOTHER_CLASS_WINDOW_END_HOUR = Number(
-  process.env.MOTHER_CLASS_WINDOW_END_HOUR || 12,
-);
 const POSTPARTUM_POLL_OPTIONS = ["Sudah ✅", "Belum ⏳"];
 const ENFORCE_ALLOWLIST = /^(1|true)$/i.test(
   process.env.ENFORCE_ALLOWLIST || "",
@@ -1006,7 +989,6 @@ function buildUserInfoMessage(user, postpartumLogs, now = nowWib()) {
     `*Pengingat tablet FE:* ${feReminderText}`,
     `*Pengingat validasi persalinan:* ${deliveryReminderText}`,
     `*Pengingat kunjungan KF/KN:* ${postpartumReminderText}`,
-    `*Pengingat kelas ibu:* ${getMotherClassStatusText(user)}`,
     "",
     "*Data Kehamilan*",
     `*HPHT:* ${formatDateId(hpht || (user ? user.hpht_iso : null))}`,
@@ -1293,104 +1275,6 @@ function buildPostpartumVisitMessage(user, visit) {
 
 function buildPostpartumVisitQuestion(visit) {
   return `Apakah Ibu sudah melakukan kunjungan ${visit.label}?`;
-}
-
-function getMotherClassMaterialUrl(week) {
-  return `${MOTHER_CLASS_BASE_URL}/minggu${week}`;
-}
-
-function isMotherClassSundayWindow(now) {
-  if (!now || !now.isValid || now.weekday !== 7) {
-    return false;
-  }
-  const startHour =
-    Number.isFinite(MOTHER_CLASS_WINDOW_START_HOUR) &&
-    MOTHER_CLASS_WINDOW_START_HOUR >= 0
-      ? Math.floor(MOTHER_CLASS_WINDOW_START_HOUR)
-      : 9;
-  const endHour =
-    Number.isFinite(MOTHER_CLASS_WINDOW_END_HOUR) &&
-    MOTHER_CLASS_WINDOW_END_HOUR > startHour
-      ? Math.floor(MOTHER_CLASS_WINDOW_END_HOUR)
-      : 12;
-  return now.hour >= startHour && now.hour < endHour;
-}
-
-function getMotherClassNextWeek(user) {
-  const nextWeek = Number(user && user.mother_class_next_week);
-  if (!Number.isFinite(nextWeek) || nextWeek < 1) {
-    return 1;
-  }
-  if (nextWeek > 4) {
-    return 5;
-  }
-  return Math.floor(nextWeek);
-}
-
-function isMotherClassCompleted(user) {
-  return (
-    user &&
-    (user.mother_class_status === "completed" ||
-      getMotherClassNextWeek(user) > 4)
-  );
-}
-
-function getMotherClassStatusText(user) {
-  if (!user || !user.mother_class_status) {
-    return withStatusIcon("wait", "Belum dimulai");
-  }
-  if (isMotherClassCompleted(user)) {
-    return withStatusIcon("done", "Selesai");
-  }
-  if (user.mother_class_step) {
-    return withStatusIcon("wait", "Menunggu jawaban kelas ibu minggu 1");
-  }
-  return withStatusIcon(
-    "wait",
-    `Aktif, menunggu pertemuan minggu ${getMotherClassNextWeek(user)}/4`,
-  );
-}
-
-function buildMotherClassWeekMessage(user, week) {
-  const name = getDisplayName(user);
-  if (week === 1) {
-    return `Halo ${name}, selamat pagi. Apa kabar hari ini?\n\nRemindCare ingin mengenalkan kelas ibu hamil. Apakah Ibu sudah pernah mengikuti kelas ibu?\n\nBalas *Sudah* atau *Belum*.`;
-  }
-  if (week === 2) {
-    return `Halo ${name}, selamat pagi. Bagaimana kabarnya hari ini?\n\nSaat ini Ibu memasuki jadwal kelas ibu pertemuan kedua. Materi pertemuan kedua bisa dibuka di link berikut:\n${getMotherClassMaterialUrl(2)}\n\nSelamat menyimak.`;
-  }
-  if (week === 3) {
-    return `Halo ${name}, selamat pagi. Bagaimana kabarnya hari ini?\n\nSaat ini Ibu memasuki jadwal kelas ibu pertemuan ketiga. Materi pertemuan ketiga bisa dibuka di link berikut:\n${getMotherClassMaterialUrl(3)}\n\nSelamat menyimak.`;
-  }
-  return `Halo ${name}, selamat pagi. Saat ini Ibu memasuki jadwal kelas ibu minggu keempat.\n\nUntuk melengkapi kelas ibu, Ibu dianjurkan datang langsung ke fasilitas kesehatan sekitar yang membuka kelas ibu, seperti posyandu, puskesmas, klinik, atau fasilitas kesehatan lainnya.\n\nSilakan hubungi kader, bidan, atau puskesmas setempat untuk jadwal kelas ibu terdekat.`;
-}
-
-function buildMotherClassPendingQuestion(step) {
-  if (step === "week1_location") {
-    return "Kelas ibu pernah diikuti di mana? Contoh: Puskesmas, Kelurahan, RT/RW, Posyandu, atau tempat lainnya.";
-  }
-  if (step === "week1_count") {
-    return "Sudah berapa kali Ibu mengikuti kelas ibu? Balas angka *1* sampai *4*.";
-  }
-  if (step === "week1_area") {
-    return "Ibu berada di wilayah cakupan mana? Contoh: Puskesmas, Kelurahan, RT/RW, atau Posyandu mana.";
-  }
-  return "Apakah Ibu sudah pernah mengikuti kelas ibu? Balas *Sudah* atau *Belum*.";
-}
-
-function buildMotherClassWeek1MaterialMessage() {
-  return `Ibu dapat mengakses materi kelas ibu pertemuan pertama di link berikut:\n${getMotherClassMaterialUrl(1)}\n\nSelamat menyimak.`;
-}
-
-function parseMotherClassAttendanceCount(input) {
-  if (!input) {
-    return null;
-  }
-  const match = String(input).match(/(^|\D)([1-4])(\D|$)/);
-  if (!match) {
-    return null;
-  }
-  return Number(match[2]);
 }
 
 function previewOf(value, fallback = "[pesan]") {
@@ -2464,9 +2348,6 @@ function renderAdminDashboardPage() {
         const ppSudah = Number(user.postpartum_sudah || ((postpartumLogs || []).filter((x) => x.response === 'Sudah').length || 0));
         const ppPct = ppTotal > 0 ? clampPercent((ppSudah * 100) / ppTotal) : 0;
 
-        const motherClassDone = user.mother_class_status === 'completed' || Number(user.mother_class_next_week || 1) > 4;
-        const motherClassCount = Number(user.mother_class_attendance_count || 0);
-        const motherClassPct = motherClassDone ? 100 : clampPercent((motherClassCount * 100) / 4);
 
         return {
           feText: 'FE ' + fePct + '%',
@@ -2475,8 +2356,6 @@ function renderAdminDashboardPage() {
           deliveryClass: deliveryState === 'Selesai' ? 'progress-ok' : (deliveryState === 'Proses' ? 'progress-info' : 'progress-warn'),
           postpartumText: 'KF/KN ' + ppPct + '%',
           postpartumClass: ppPct >= 75 ? 'progress-ok' : (ppPct > 0 ? 'progress-info' : 'progress-warn'),
-          motherClassText: 'Kelas Ibu ' + motherClassPct + '%',
-          motherClassClass: motherClassPct >= 75 ? 'progress-ok' : (motherClassPct > 0 ? 'progress-info' : 'progress-warn')
         };
       }
       function createProgressBadges(progress) {
@@ -2486,7 +2365,6 @@ function renderAdminDashboardPage() {
           [progress.feText, progress.feClass],
           [progress.deliveryText, progress.deliveryClass],
           [progress.postpartumText, progress.postpartumClass],
-          [progress.motherClassText, progress.motherClassClass]
         ];
         for (const [text, cls] of rows) {
           const badge = document.createElement('span');
@@ -2818,11 +2696,6 @@ function renderAdminUserDetailPage(waId) {
       <p class="stale-note" id="page-note" role="status" aria-live="polite"></p>
 
       <div class="panel">
-        <h2 class="panel-title">Data kelas ibu</h2>
-        <div class="table-wrap"><table><caption class="muted">Data kelas ibu user ini.</caption><thead><tr><th scope="col">Item</th><th scope="col">Nilai</th></tr></thead><tbody id="mother-class-body" aria-busy="true"><tr><td colspan="2" class="muted">Memuat data kelas ibu...</td></tr></tbody></table></div>
-      </div>
-
-      <div class="panel">
         <h2 class="panel-title">Data persalinan</h2>
         <div class="table-wrap"><table><caption class="muted">Data persalinan user ini.</caption><thead><tr><th scope="col">Item</th><th scope="col">Nilai</th></tr></thead><tbody id="delivery-body" aria-busy="true"><tr><td colspan="2" class="muted">Memuat data persalinan...</td></tr></tbody></table></div>
       </div>
@@ -2902,7 +2775,7 @@ function renderAdminUserDetailPage(waId) {
       }
       async function loadDetail(){
         setPageNote('');
-        ['delivery-body', 'mother-class-body', 'pp-body'].forEach((id)=>setBusy(id, 'true'));
+        ['delivery-body', 'pp-body'].forEach((id)=>setBusy(id, 'true'));
         try {
           const data = await fetchJson('/admin/api/users/' + encodeURIComponent(waId));
           const user = data.user || {};
@@ -2929,19 +2802,6 @@ function renderAdminUserDetailPage(waId) {
           ];
           const filledDeliveryRows = deliveryRows.filter((row) => row[1] !== null && row[1] !== undefined && row[1] !== '');
           renderRows(document.getElementById('delivery-body'), filledDeliveryRows, (r)=>r, 'Belum ada data persalinan untuk user ini.', 2, true);
-          const motherClassRows = [
-            ['Status kelas ibu', user.mother_class_status],
-            ['Pertemuan berikutnya', user.mother_class_next_week ? ('Minggu ke-' + user.mother_class_next_week) : null],
-            ['Jumlah kehadiran', user.mother_class_attendance_count !== null && user.mother_class_attendance_count !== undefined ? (user.mother_class_attendance_count + ' kali') : null],
-            ['Pernah ikut kelas ibu', user.mother_class_attended === 1 ? 'Ya' : (user.mother_class_attended === 0 ? 'Tidak' : null)],
-            ['Lokasi kelas ibu', user.mother_class_location],
-            ['Wilayah kelas ibu', user.mother_class_area],
-            ['Mulai kelas ibu', fmtDt(user.mother_class_started_at)],
-            ['Terakhir dikirim', fmt(user.mother_class_last_sent_date)],
-            ['Selesai kelas ibu', fmtDt(user.mother_class_completed_at)]
-          ];
-          const filledMotherClassRows = motherClassRows.filter((row) => row[1] !== null && row[1] !== undefined && row[1] !== '');
-          renderRows(document.getElementById('mother-class-body'), filledMotherClassRows, (r)=>r, 'Belum ada data kelas ibu untuk user ini.', 2, true);
           renderRows(
             document.getElementById('pp-body'),
             data.postpartum_logs || [],
@@ -2952,7 +2812,6 @@ function renderAdminUserDetailPage(waId) {
           );
         } catch (err) {
           setBusy('delivery-body', false);
-          setBusy('mother-class-body', false);
           setBusy('pp-body', false);
           if (err.status === 404) {
             setPageNote('User dengan nomor ' + waId + ' tidak ditemukan di database. Periksa nomornya di daftar user, atau kembali ke daftar.');
@@ -3235,72 +3094,6 @@ async function ensureUserColumns(db) {
     "users",
     "postpartum_education_sent_at",
     "postpartum_education_sent_at TEXT",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_status",
-    "mother_class_status TEXT",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_started_at",
-    "mother_class_started_at TEXT",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_next_week",
-    "mother_class_next_week INTEGER NOT NULL DEFAULT 1",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_last_sent_week",
-    "mother_class_last_sent_week INTEGER",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_last_sent_date",
-    "mother_class_last_sent_date TEXT",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_step",
-    "mother_class_step TEXT",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_attended",
-    "mother_class_attended INTEGER",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_location",
-    "mother_class_location TEXT",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_attendance_count",
-    "mother_class_attendance_count INTEGER",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_area",
-    "mother_class_area TEXT",
-  );
-  await ensureColumn(
-    db,
-    "users",
-    "mother_class_completed_at",
-    "mother_class_completed_at TEXT",
   );
 }
 
@@ -3666,17 +3459,6 @@ async function initDb(db) {
       mother_current_complaint TEXT,
       delivery_data_completed_at TEXT,
       postpartum_education_sent_at TEXT,
-      mother_class_status TEXT,
-      mother_class_started_at TEXT,
-      mother_class_next_week INTEGER NOT NULL DEFAULT 1,
-      mother_class_last_sent_week INTEGER,
-      mother_class_last_sent_date TEXT,
-      mother_class_step TEXT,
-      mother_class_attended INTEGER,
-      mother_class_location TEXT,
-      mother_class_attendance_count INTEGER,
-      mother_class_area TEXT,
-      mother_class_completed_at TEXT,
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     )`,
@@ -3818,25 +3600,6 @@ async function updateUser(db, waId, updates) {
     `UPDATE users SET ${setClause}, updated_at = ? WHERE wa_id = ?`,
     params,
   );
-}
-
-function getMotherClassActivationUpdates(user, now = nowWib()) {
-  if (user && user.mother_class_status) {
-    return {};
-  }
-  return {
-    mother_class_status: "active",
-    mother_class_started_at: now.toISO(),
-    mother_class_next_week: 1,
-    mother_class_last_sent_week: null,
-    mother_class_last_sent_date: null,
-    mother_class_step: null,
-    mother_class_attended: null,
-    mother_class_location: null,
-    mother_class_attendance_count: null,
-    mother_class_area: null,
-    mother_class_completed_at: null,
-  };
 }
 
 function parseYesNo(input) {
@@ -4154,9 +3917,6 @@ async function getAdminUsers(db) {
       u.baby_birth_weight,
       u.mother_current_complaint,
       u.delivery_data_completed_at,
-      u.mother_class_status,
-      u.mother_class_next_week,
-      u.mother_class_attendance_count,
       COALESCE(pv.postpartum_total, 0) as postpartum_total,
       COALESCE(pv.postpartum_sent, 0) as postpartum_sent,
       COALESCE(pv.postpartum_sudah, 0) as postpartum_sudah,
@@ -4279,17 +4039,6 @@ async function restartUserDataFromBeginning(db, waId) {
     mother_current_complaint: null,
     delivery_data_completed_at: null,
     postpartum_education_sent_at: null,
-    mother_class_status: null,
-    mother_class_started_at: null,
-    mother_class_next_week: 1,
-    mother_class_last_sent_week: null,
-    mother_class_last_sent_date: null,
-    mother_class_step: null,
-    mother_class_attended: null,
-    mother_class_location: null,
-    mother_class_attendance_count: null,
-    mother_class_area: null,
-    mother_class_completed_at: null,
   });
 }
 
@@ -4878,200 +4627,6 @@ async function recordPostpartumVisitResponse(db, visitLog, response) {
     ],
   );
   return { allowed, limit, count: currentCount };
-}
-
-async function sendMotherClassReminderIfDue(db, client, user, now) {
-  if (!user || isMotherClassCompleted(user)) {
-    return false;
-  }
-  if (!isMotherClassSundayWindow(now)) {
-    return false;
-  }
-
-  const today = toDateKey(now);
-  if (user.mother_class_last_sent_date === today) {
-    return false;
-  }
-
-  let workingUser = user;
-  if (!workingUser.mother_class_status) {
-    const activationUpdates = getMotherClassActivationUpdates(workingUser, now);
-    await updateUser(db, workingUser.wa_id, activationUpdates);
-    workingUser = { ...workingUser, ...activationUpdates };
-  }
-
-  const pendingStep = String(workingUser.mother_class_step || "").trim();
-  if (pendingStep) {
-    const sentPending = await sendText(
-      client,
-      workingUser.wa_id,
-      buildMotherClassPendingQuestion(pendingStep),
-    );
-    if (sentPending) {
-      await updateUser(db, workingUser.wa_id, {
-        mother_class_last_sent_week: 1,
-        mother_class_last_sent_date: today,
-      });
-    }
-    return Boolean(sentPending);
-  }
-
-  const week = getMotherClassNextWeek(workingUser);
-  if (week > 4) {
-    await updateUser(db, workingUser.wa_id, {
-      mother_class_status: "completed",
-      mother_class_completed_at:
-        workingUser.mother_class_completed_at || now.toISO(),
-    });
-    return false;
-  }
-
-  const sent = await sendText(
-    client,
-    workingUser.wa_id,
-    buildMotherClassWeekMessage(workingUser, week),
-  );
-  if (!sent) {
-    return false;
-  }
-
-  const updates = {
-    mother_class_status: "active",
-    mother_class_last_sent_week: week,
-    mother_class_last_sent_date: today,
-  };
-
-  if (week === 1) {
-    updates.mother_class_step = "week1_attended";
-  } else if (week === 4) {
-    updates.mother_class_next_week = 5;
-    updates.mother_class_status = "completed";
-    updates.mother_class_step = null;
-    updates.mother_class_completed_at = now.toISO();
-  } else {
-    updates.mother_class_next_week = week + 1;
-    updates.mother_class_step = null;
-  }
-
-  await updateUser(db, workingUser.wa_id, updates);
-  return true;
-}
-
-async function handleMotherClassAnswer(db, client, user, text) {
-  if (!user || !user.mother_class_step) {
-    return false;
-  }
-
-  const step = String(user.mother_class_step || "").trim();
-  const raw = text ? text.trim() : "";
-  if (!raw) {
-    await sendText(client, user.wa_id, buildMotherClassPendingQuestion(step));
-    return true;
-  }
-
-  if (step === "week1_attended") {
-    const answer = parsePollAnswer(raw);
-    if (!answer) {
-      await sendText(
-        client,
-        user.wa_id,
-        "Jawab dengan *Sudah* atau *Belum* ya, Ibu.",
-      );
-      return true;
-    }
-    if (answer === "Sudah") {
-      await updateUser(db, user.wa_id, {
-        mother_class_attended: 1,
-        mother_class_step: "week1_location",
-      });
-      await sendText(
-        client,
-        user.wa_id,
-        buildMotherClassPendingQuestion("week1_location"),
-      );
-      return true;
-    }
-    await updateUser(db, user.wa_id, {
-      mother_class_attended: 0,
-      mother_class_step: "week1_area",
-    });
-    await sendText(
-      client,
-      user.wa_id,
-      buildMotherClassPendingQuestion("week1_area"),
-    );
-    return true;
-  }
-
-  if (step === "week1_location") {
-    await updateUser(db, user.wa_id, {
-      mother_class_location: raw,
-      mother_class_step: "week1_count",
-    });
-    await sendText(
-      client,
-      user.wa_id,
-      buildMotherClassPendingQuestion("week1_count"),
-    );
-    return true;
-  }
-
-  if (step === "week1_count") {
-    const count = parseMotherClassAttendanceCount(raw);
-    if (!count) {
-      await sendText(
-        client,
-        user.wa_id,
-        "Jumlah pertemuan belum terbaca. Balas angka *1*, *2*, *3*, atau *4* ya.",
-      );
-      return true;
-    }
-
-    if (count >= 4) {
-      await updateUser(db, user.wa_id, {
-        mother_class_attendance_count: count,
-        mother_class_step: null,
-        mother_class_next_week: 5,
-        mother_class_status: "completed",
-        mother_class_completed_at: nowWib().toISO(),
-      });
-      await sendText(
-        client,
-        user.wa_id,
-        "Selamat, Ibu sudah menyelesaikan 4 kali kelas ibu. Program pengingat kelas ibu dinyatakan selesai. 🎉",
-      );
-      return true;
-    }
-
-    await updateUser(db, user.wa_id, {
-      mother_class_attendance_count: count,
-      mother_class_step: null,
-      mother_class_next_week: 2,
-    });
-    await sendText(
-      client,
-      user.wa_id,
-      `Baik, Ibu sudah mengikuti kelas ibu ${count} kali. RemindCare akan lanjut mengingatkan setiap hari Minggu pagi sampai program 4 minggu selesai.\n\n${buildMotherClassWeek1MaterialMessage()}`,
-    );
-    return true;
-  }
-
-  if (step === "week1_area") {
-    await updateUser(db, user.wa_id, {
-      mother_class_area: raw,
-      mother_class_step: null,
-      mother_class_next_week: 2,
-    });
-    await sendText(
-      client,
-      user.wa_id,
-      `Baik, wilayah cakupan Ibu sudah dicatat.\n\n${buildMotherClassWeek1MaterialMessage()}`,
-    );
-    return true;
-  }
-
-  await updateUser(db, user.wa_id, { mother_class_step: null });
-  return false;
 }
 
 async function hasCompletedFinalPostpartumVisit(db, waId) {
@@ -5700,7 +5255,6 @@ async function handleOnboardingAnswer(db, client, user, text) {
 
   if (!question) {
     await updateUser(db, user.wa_id, {
-      ...getMotherClassActivationUpdates(user),
       status: "active",
       onboarding_step: 0,
     });
@@ -5789,7 +5343,6 @@ async function handleOnboardingAnswer(db, client, user, text) {
 
     await updateUser(db, user.wa_id, {
       ...updates,
-      ...getMotherClassActivationUpdates(user, now),
       status: "active",
       onboarding_step: 0,
       last_reminder_date: lastReminderDate,
@@ -6026,7 +5579,7 @@ async function handleCommand(db, client, user, text) {
     await sendText(
       client,
       user.wa_id,
-      "Oke, semua pengingat dihentikan dulu. Ini termasuk pengingat tablet FE, validasi persalinan, kunjungan nifas, dan kelas ibu.\nKetik *start* kapan saja kalau mau aktif lagi. \u23f8\ufe0f",
+      "Oke, semua pengingat dihentikan dulu. Ini termasuk pengingat tablet FE, validasi persalinan, kunjungan nifas.\nKetik *start* kapan saja kalau mau aktif lagi. \u23f8\ufe0f",
     );
     return true;
   }
@@ -6051,7 +5604,6 @@ async function handleCommand(db, client, user, text) {
     }
 
     await updateUser(db, user.wa_id, {
-      ...getMotherClassActivationUpdates(user),
       allow_remindcare: 1,
       status: "active",
     });
@@ -6076,7 +5628,6 @@ async function handleCommand(db, client, user, text) {
       return true;
     }
     await updateUser(db, user.wa_id, {
-      ...getMotherClassActivationUpdates(user),
       reminder_time: time,
       allow_remindcare: 1,
       status: "active",
@@ -6276,9 +5827,6 @@ async function handleMessage(db, client, msg) {
     return;
   }
 
-  if (await handleMotherClassAnswer(db, client, user, text)) {
-    return;
-  }
 
   const pollAnswer = parsePollAnswer(text);
   if (pollAnswer) {
@@ -6525,9 +6073,6 @@ async function processUserReminderTick(db, client, user, now, today) {
     await sendDeliveryValidationPoll(db, client, user, now, deliveryStage);
   }
 
-  if (!quotaReached()) {
-    await sendMotherClassReminderIfDue(db, client, user, now);
-  }
 
   if (!canSendMainReminder) {
     return;
@@ -6909,11 +6454,6 @@ function startAdminServer(db) {
     next();
   });
 
-  for (const [slug, targetUrl] of Object.entries(MOTHER_CLASS_REDIRECTS)) {
-    app.get(`/${slug}`, (req, res) => {
-      res.redirect(302, targetUrl);
-    });
-  }
 
   const requireAdmin = (req, res, next) => {
     const token = getAdminSession(req);
@@ -7470,8 +7010,6 @@ const NUMERIC_ENV_KEYS = [
   "ADMIN_WEB_SESSION_TTL_MS",
   "ADMIN_LOGIN_MAX_ATTEMPTS",
   "ADMIN_LOGIN_WINDOW_MS",
-  "MOTHER_CLASS_WINDOW_START_HOUR",
-  "MOTHER_CLASS_WINDOW_END_HOUR",
   "SEND_MIN_GAP_MS",
   "SEND_JITTER_MS",
   "REPLY_MIN_GAP_MS",
@@ -7713,8 +7251,6 @@ module.exports = {
   validateDeliveryDateIso,
   validateDeliveryDateTime,
   isDeliveryCheckCommand,
-  isMotherClassSundayWindow,
-  parseMotherClassAttendanceCount,
   escapeForScriptContext,
   validateEnv,
   takeSendAttempt,
