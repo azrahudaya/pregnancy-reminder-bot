@@ -1,0 +1,27 @@
+{
+  "name": "pregnancy-reminder-bot",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node tests/parse.test.js && node tests/send-guard.test.js && node tests/hardening.test.js && node tests/p1-hardening.test.js && node tests/p2-hardening.test.js && node tests/p4-hardening.test.js && node tests/p3-hardening.test.js && node tests/pairing.test.js",
+    "backup": "node scripts/backup-db.js"
+  },
+  "keywords": [
+    "whatsapp",
+    "bot",
+    "reminder",
+    "pregnancy",
+    "whatsapp-web.js"
+  ],
+  "author": "Azra Hudaya",
+  "license": "MIT",
+  "description": "WhatsApp bot pengingat konsumsi tablet FE harian untuk ibu hamil, lengkap dengan admin web.",
+  "dependencies": {
+    "express": "^4.22.3",
+    "luxon": "^3.7.2",
+    "qrcode-terminal": "^0.12.0",
+    "sqlite3": "^5.1.7",
+    "whatsapp-web.js": "^1.34.6"
+  }
+}

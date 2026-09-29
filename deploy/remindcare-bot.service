@@ -1,0 +1,28 @@
+[Unit]
+Description=RemindCare WhatsApp Bot
+Documentation=file:/opt/remindcare/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Ganti User dan WorkingDirectory sesuai mesin Anda.
+User=ubuntu
+WorkingDirectory=/opt/remindcare
+# File .env dibaca kalau ada. Isi dari .env.example.
+EnvironmentFile=-/opt/remindcare/.env
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/node index.js
+# Bot mengirim pesan ke pasien: selalu hidupkan lagi kalau mati, tapi jangan berputar
+# terlalu cepat saat sesi WhatsApp bermasalah (pemindaian QR berulang itu sinyal).
+Restart=always
+RestartSec=30
+# Beri waktu shutdown rapi (menutup DB dan melepas lock instance).
+KillSignal=SIGTERM
+TimeoutStopSec=60
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=remindcare
+
+[Install]
+WantedBy=multi-user.target

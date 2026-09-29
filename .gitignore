@@ -1,0 +1,16 @@
+node_modules/
+# Semua folder data: database, backup, audio, file password admin.
+# Pola data*/ menutup juga folder lama "data backup" yang dulu lolos dari data/.
+data*/
+.env
+.env.local
+*.db
+*.db-wal
+*.db-shm
+*.sqlite
+.wwebjs_auth/
+.wwebjs_cache/
+bot.lock
+npm-debug.log*
+*.log
+coverage/
