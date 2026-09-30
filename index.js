@@ -1796,6 +1796,9 @@ function renderAdminLoginPage(message, options = {}) {
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <title>RemindCare Admin</title>
     <style nonce="${nonce}">
       :root {
@@ -1816,7 +1819,7 @@ function renderAdminLoginPage(message, options = {}) {
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         background: var(--bg);
         color: var(--text);
         min-height: 100vh;
@@ -1935,197 +1938,204 @@ function renderAdminDashboardPage(options = {}) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="${csrf}">
     <title>RemindCare Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style nonce="${nonce}">
       :root {
-        --bg: #f8fafc;
+        --bg: #f7f8fb;
         --panel: #ffffff;
-        --text: #111827;
-        --muted: #667085;
-        --border: #cfd6e3;
-        --border-strong: #7d8695;
+        --text: #101828;
+        --muted: #5f6b7c;
+        --border: #d7dde8;
         --control-border: #7d8695;
         --placeholder: #667085;
         --focus: #4f46e5;
         --accent: #4f46e5;
         --accent-soft: #eef2ff;
-        --ok: #067647;
-        --ok-bg: #ecfdf3;
-        --warn: #b54708;
-        --warn-bg: #fffaeb;
-        --bad: #b42318;
-        --bad-bg: #fff1f0;
-        --shadow: 0 14px 34px rgba(17, 24, 39, 0.07);
+        --ok: #05603a;
+        --ok-bg: #e7f6ee;
+        --warn: #93370d;
+        --warn-bg: #fdf3e3;
+        --bad: #912018;
+        --bad-bg: #fdeceb;
+        --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.05);
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
         background: var(--bg);
         color: var(--text);
+        font-size: 14px;
+        line-height: 1.5;
       }
       a { color: inherit; }
-      .container { width: min(1220px, 100%); margin: 0 auto; }
-      .table-wrap, .table-wrap table { max-width: 100%; }
+      .num { font-variant-numeric: tabular-nums; }
+      .container { width: min(1180px, 100%); margin: 0 auto; }
       header.container {
         display: grid;
-        grid-template-columns: 1fr auto;
-        gap: 18px;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 16px;
         align-items: end;
-        padding: 28px 24px 18px;
+        padding: 26px 22px 14px;
       }
-      h1 {
-        margin: 0;
-        font-size: clamp(26px, 3vw, 34px);
-        letter-spacing: -0.04em;
-        line-height: 1.05;
-      }
-      .subtitle { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
-      .muted { color: var(--muted); font-size: 12px; line-height: 1.5; }
-      .actions, .users-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; min-width: 0; }
-      .actions > *, .users-tools > * { min-width: 0; }
+      h1 { margin: 0; font-size: clamp(22px, 2.4vw, 28px); letter-spacing: -0.02em; }
+      .subtitle { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+      .muted { color: var(--muted); font-size: 12px; }
+      .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+      .actions > * { min-width: 0; }
       button, .ghost {
         display: inline-flex;
         align-items: center;
         justify-content: center;
+        gap: 6px;
         min-height: 44px;
         padding: 10px 14px;
-        border-radius: 10px;
-        border: 1px solid #cfd6e3;
+        border-radius: 9px;
+        border: 1px solid var(--control-border);
         background: #fff;
-        color: #111827;
-        font-weight: 650;
+        color: var(--text);
+        font-family: inherit;
+        font-size: 13px;
+        font-weight: 600;
         cursor: pointer;
         text-decoration: none;
-        font-size: 13px;
-        font-family: inherit;
       }
-      button { background: var(--accent); border-color: #4338ca; color: #fff; }
-      .ghost:hover, .export-menu summary:hover { background: #f9fafb; border-color: var(--border-strong); }
-      button:hover { background: #4338ca; }
+      button.primary { background: var(--accent); border-color: #4338ca; color: #fff; }
+      button:hover, .ghost:hover { border-color: var(--focus); }
+      button.primary:hover { background: #4338ca; }
+      button:disabled { opacity: 0.6; cursor: default; }
       button:focus-visible, .ghost:focus-visible, .phase-filter:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible {
         outline: 3px solid var(--focus);
         outline-offset: 2px;
       }
-      /* Tanpa minmax(0, 1fr) kolom grid mengikuti isi, dan satu anak yang lebar
-         (misalnya deretan filter) mendorong seluruh halaman melebar di layar kecil. */
-      main { padding: 0 24px 42px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
-      .panel, .card {
+      main { padding: 0 22px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+      .panel {
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 16px;
+        border-radius: 14px;
         box-shadow: var(--shadow);
+        padding: 16px;
       }
-      .panel { padding: 16px; }
-      .stats, .phase-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; }
-      .card { padding: 16px; }
-      .card .label, .phase-card .label { font-size: 12px; color: var(--muted); font-weight: 650; }
-      .card .value, .phase-card .value {
-        font-size: 24px;
-        font-weight: 760;
-        margin-top: 8px;
-        overflow-wrap: anywhere;
-        line-height: 1.15;
-        letter-spacing: -0.02em;
-      }
-      .section-title { font-size: 15px; font-weight: 760; margin: 0; }
-      .section-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 14px; min-width: 0; }
-      .section-head > * { min-width: 0; }
-      .search-input {
-        border: 1px solid var(--control-border);
-        border-radius: 10px;
-        padding: 10px 12px;
-        font-size: 14px;
-        min-width: 260px;
-        min-height: 44px;
-        background: #fff;
-      }
-      .phase-card { background: #f9fafb; border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
-      .phase-filters { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
-      .phase-filter { border: 1px solid var(--border); background: #fff; color: #344054; border-radius: 10px; padding: 10px 12px; font-size: 12px; min-height: 44px; }
-      .phase-filter[aria-pressed="true"] { background: #111827; color: #fff; border-color: #111827; }
-      .phase-badge, .progress-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 700; border: 1px solid transparent; }
-      .phase-kehamilan, .progress-ok { background: var(--ok-bg); color: var(--ok); border-color: #abefc6; }
-      .phase-persalinan, .progress-warn { background: var(--warn-bg); color: var(--warn); border-color: #fedf89; }
-      .phase-pasca, .progress-info { background: var(--accent-soft); color: #3538cd; border-color: #c7d7fe; }
-      .phase-onboarding { background: #f2f4f7; color: #475467; border-color: #d0d5dd; }
-      .table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; background: #fff; }
-      table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 13px; min-width: 780px; }
-      caption { text-align: left; padding: 10px 12px; }
-      th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid #edf0f5; white-space: nowrap; }
-      th { background: #f9fafb; font-weight: 700; color: #475467; }
-      th:first-child, td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); border-right: 1px solid var(--border); }
-      th:first-child { background: #f9fafb; }
-      tbody tr:hover, tbody tr:hover td:first-child { background: #f9fafb; }
-      /* Baris hanya penanda visual. Satu-satunya target interaktif adalah tautan nama,
-         supaya pola keyboard dan mouse sama dan tidak ada kontrol setengah jadi. */
+      .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; min-width: 0; }
+      .panel-head > * { min-width: 0; }
+      h2 { margin: 0; font-size: 15px; letter-spacing: -0.01em; }
+
+      /* Blok status: satu fokus utama per layar. */
+      .status-panel { display: grid; gap: 14px; }
+      .status-panel[data-state="ok"] { border-left: 3px solid var(--ok); }
+      .status-panel[data-state="warn"] { border-left: 3px solid var(--warn); }
+      .status-panel[data-state="bad"] { border-left: 3px solid var(--bad); }
+      .status-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .status-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--muted); flex: none; }
+      [data-state="ok"] .status-dot { background: var(--ok); }
+      [data-state="warn"] .status-dot { background: var(--warn); }
+      [data-state="bad"] .status-dot { background: var(--bad); }
+      .status-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
+      .status-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
+      .fact { border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px; background: #fbfcfe; }
+      .fact dt { color: var(--muted); font-size: 12px; font-weight: 600; }
+      .fact dd { margin: 4px 0 0; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+
+      .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+      .chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--border); background: #fbfcfe; padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
+      .chip[data-tone="ok"] { background: var(--ok-bg); color: var(--ok); border-color: #a9dfc4; }
+      .chip[data-tone="warn"] { background: var(--warn-bg); color: var(--warn); border-color: #f3cf9a; }
+      .chip[data-tone="bad"] { background: var(--bad-bg); color: var(--bad); border-color: #f5b5b0; }
+
+      .action-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
+      .action-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: #fff; }
+      .action-name { font-weight: 650; overflow-wrap: anywhere; }
+      .action-detail { color: var(--muted); font-size: 12px; }
+
+      .today-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+      .today-cell { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fbfcfe; }
+      .today-cell .k { color: var(--muted); font-size: 12px; font-weight: 600; }
+      .today-cell .v { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+      .phase-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+      .phase-line .item { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; background: #fbfcfe; font-size: 12px; font-weight: 600; }
+      .phase-line .item b { font-variant-numeric: tabular-nums; }
+
+      .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
+      .tools > * { min-width: 0; }
+      .search-input { border: 1px solid var(--control-border); border-radius: 9px; padding: 10px 12px; font-size: 13px; min-height: 44px; background: #fff; font-family: inherit; min-width: 0; flex: 1 1 220px; }
+      .search-input::placeholder { color: var(--placeholder); }
+      .phase-filters { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; }
+      .phase-filter { border: 1px solid var(--border); background: #fff; color: var(--text); border-radius: 999px; padding: 10px 13px; font-size: 12px; font-weight: 600; min-height: 44px; }
+      .phase-filter[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: #fff; }
+
+      .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
+      table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 660px; }
+      caption { text-align: left; padding: 10px 12px; color: var(--muted); font-size: 12px; }
+      th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eef1f6; white-space: nowrap; }
+      th { background: #f9fafb; color: var(--muted); font-weight: 650; }
+      tbody tr:hover { background: #f9fafb; }
       td.name-cell { padding: 0; }
-      a.row-link {
-        display: flex;
-        align-items: center;
-        min-height: 44px;
-        padding: 11px 12px;
-        text-decoration: none;
-        font-weight: 650;
-        color: var(--accent);
-      }
+      a.row-link { display: flex; align-items: center; min-height: 44px; padding: 10px 12px; text-decoration: none; font-weight: 650; color: var(--accent); }
       a.row-link:hover { text-decoration: underline; }
-      .grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
-      .progress-badges { display: flex; gap: 6px; flex-wrap: wrap; }
-      .toast { position: fixed; bottom: 24px; right: 24px; background: #111827; color: #fff; padding: 12px 14px; border-radius: 12px; opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
-      .toast.show { opacity: 1; transform: translateY(0); }
-      .error-banner { display: grid; gap: 10px; border: 1px solid #fecdca; background: var(--bad-bg); color: var(--bad); border-radius: 14px; padding: 14px; font-size: 13px; }
-      .error-banner[hidden], .stale-note[hidden] { display: none; }
+      .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 650; border: 1px solid transparent; }
+      .b-ok { background: var(--ok-bg); color: var(--ok); border-color: #a9dfc4; }
+      .b-warn { background: var(--warn-bg); color: var(--warn); border-color: #f3cf9a; }
+      .b-info { background: var(--accent-soft); color: #3538cd; border-color: #c7d7fe; }
+      .b-mute { background: #f2f4f7; color: #475467; border-color: #d0d5dd; }
+
+      .log-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+      .log-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; border-bottom: 1px solid #eef1f6; padding: 8px 2px; font-size: 13px; }
+      .log-item:last-child { border-bottom: none; }
+      .log-meta { color: var(--muted); font-size: 12px; }
+
+      .empty-line { margin: 0; color: var(--muted); font-size: 13px; }
+      .error-banner { display: grid; gap: 10px; border: 1px solid #f5b5b0; background: var(--bad-bg); color: var(--bad); border-radius: 12px; padding: 14px; font-size: 13px; }
+      .error-banner[hidden] { display: none; }
       .error-banner p { margin: 0; }
       .stale-note { margin: 0 0 10px; color: var(--bad); font-size: 12px; }
-      .table-hint { display: none; margin: 0 0 10px; }
-      h2.section-title { margin-bottom: 10px; }
-      .export-menu { position: relative; }
-      .export-menu summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 14px; border-radius: 10px; border: 1px solid #cfd6e3; background: #fff; color: #111827; font-size: 13px; font-weight: 650; list-style: none; cursor: pointer; }
-      .export-menu summary::after { content: ""; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); }
-      .export-menu[open] summary::after { transform: rotate(-135deg); }
-      .export-menu > .muted { margin: 8px 0 0; max-width: 320px; }
-      .export-menu > a.ghost { margin-top: 8px; width: 100%; justify-content: flex-start; }
+      .stale-note[hidden] { display: none; }
+      .toast { position: fixed; bottom: 20px; right: 20px; background: var(--text); color: #fff; padding: 11px 14px; border-radius: 10px; font-size: 13px; opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
+      .toast.show { opacity: 1; transform: translateY(0); }
+      [hidden] { display: none !important; }
+
       @media (max-width: 720px) {
-        header.container { grid-template-columns: 1fr; align-items: stretch; padding: 20px 16px 12px; }
+        header.container { grid-template-columns: minmax(0, 1fr); align-items: stretch; padding: 20px 16px 12px; }
         main { padding: 0 16px 32px; }
-        .actions, .users-tools { width: 100%; }
-        .actions > *, .users-tools > * { flex: 1 1 auto; min-width: 0; }
-        .search-input { min-width: 0; width: 100%; }
+        .actions, .tools { width: 100%; }
+        .actions > *, .tools > * { flex: 1 1 auto; }
         .phase-filters { width: 100%; max-width: 100%; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
-        .table-hint { display: block; }
-        .card .value { font-size: 20px; }
+        .action-item { grid-template-columns: minmax(0, 1fr); }
+        .action-item button { width: 100%; }
+        .today-cell .v { font-size: 20px; }
         .toast { left: 16px; right: 16px; bottom: 16px; }
       }
-      @media (max-width: 420px) {
-        .stats, .phase-stats { grid-template-columns: 1fr; }
-        .section-head { align-items: flex-start; }
-        .card .value { font-size: 18px; }
-      }
-      @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }    </style>
+      @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+    </style>
   </head>
   <body>
     <header class="container">
       <div>
         <h1>RemindCare Admin</h1>
-        <div class="subtitle">Dashboard ringkas pengguna dan pengingat</div>
-        <div class="muted">Data terakhir tersinkron: <span id="last-updated">-</span></div>
+        <p class="subtitle">Kokpit pengingat harian. Bagian atas menjawab apakah bot sehat, bagian tengah apa yang perlu dikerjakan.</p>
+        <p class="muted">Data terakhir dimuat: <span id="last-updated">belum dimuat</span></p>
       </div>
       <div class="actions">
-              <button type="button" id="refresh-btn">Muat ulang</button>
-              <a class="ghost" href="/admin/settings">Pengaturan</a>
-              <details class="export-menu">
-                <summary>Ekspor data (CSV)</summary>
-                <p class="muted">Isi setiap berkas adalah data seluruh user, termasuk nomor WhatsApp dan tanggal persalinan. Berkas yang sudah diunduh bisa dibuka siapa pun yang memegangnya, jadi simpan di tempat yang aman.</p>
-                <a class="ghost" href="/admin/api/export/users.csv" download>Data user</a>
-                <a class="ghost" href="/admin/api/export/reminder_logs.csv" download>Catatan pengingat</a>
-                <a class="ghost" href="/admin/api/export/postpartum_logs.csv" download>Catatan nifas</a>
-              </details>
-              <form method="post" action="/admin/logout">
-                <input type="hidden" name="_csrf" value="${csrf}">
-                <button type="submit" class="ghost">Keluar</button>
-              </form>
-            </div>
+        <button type="button" id="refresh-btn" class="primary">Muat ulang data</button>
+        <a class="ghost" href="/admin/settings">Kendali dan pengaturan</a>
+        <details class="export-menu">
+          <summary class="ghost">Ekspor CSV</summary>
+          <div class="panel" style="margin-top:8px">
+            <p class="muted">Berkas memuat nomor WhatsApp dan data kesehatan. Simpan di tempat aman.</p>
+            <a class="ghost" href="/admin/api/export/users.csv" download>Data user</a>
+            <a class="ghost" href="/admin/api/export/reminder_logs.csv" download>Catatan pengingat</a>
+            <a class="ghost" href="/admin/api/export/postpartum_logs.csv" download>Catatan nifas</a>
+          </div>
+        </details>
+        <form method="post" action="/admin/logout">
+          <input type="hidden" name="_csrf" value="${csrf}">
+          <button type="submit" class="ghost">Keluar</button>
+        </form>
+      </div>
     </header>
+
     <main class="container">
       <div class="error-banner" id="error-banner" role="alert" hidden>
         <p id="error-text"></p>
@@ -2134,97 +2144,115 @@ function renderAdminDashboardPage(options = {}) {
         </div>
       </div>
 
-      <section id="stats-section">
-        <h2 class="section-title">Ringkasan hari ini</h2>
-        <p class="status-line" id="stats-note" role="status" aria-live="polite">Memuat ringkasan hari ini.</p>
-        <div class="stats">
-          <div class="card"><div class="label">Total user</div><div class="value" id="stat-users-total">-</div></div>
-          <div class="card"><div class="label">Aktif</div><div class="value" id="stat-users-active">-</div></div>
-          <div class="card"><div class="label">Dijeda</div><div class="value" id="stat-users-paused">-</div></div>
-          <div class="card"><div class="label">Selesai</div><div class="value" id="stat-users-completed">-</div></div>
-          <div class="card"><div class="label">Sudah (hari ini)</div><div class="value" id="stat-today-sudah">-</div></div>
-          <div class="card"><div class="label">Belum (hari ini)</div><div class="value" id="stat-today-belum">-</div></div>
+      <section class="panel status-panel" id="status-panel" data-state="warn" aria-labelledby="status-title">
+        <div class="status-main">
+          <span class="status-dot" aria-hidden="true"></span>
+          <span class="status-title" id="status-title">Memeriksa status bot</span>
+          <span class="muted" id="status-sub"></span>
+        </div>
+        <dl class="status-facts">
+          <div class="fact"><dt>Sesi WhatsApp</dt><dd id="fact-client">memuat</dd></div>
+          <div class="fact"><dt>Siap sejak</dt><dd id="fact-ready">memuat</dd></div>
+          <div class="fact"><dt>Jendela kirim</dt><dd id="fact-window">memuat</dd></div>
+          <div class="fact"><dt>Kuota hari ini</dt><dd id="fact-quota">memuat</dd></div>
+          <div class="fact"><dt>Pesan keluar (sesi ini)</dt><dd id="fact-sent">memuat</dd></div>
+          <div class="fact"><dt>Gagal kirim (sesi ini)</dt><dd id="fact-failed">memuat</dd></div>
+        </dl>
+        <div class="chips" id="status-chips"></div>
+        <p class="stale-note" id="status-note" role="status" aria-live="polite" hidden></p>
+      </section>
+
+      <section class="panel" id="action-section" aria-labelledby="action-title">
+        <div class="panel-head">
+          <h2 id="action-title">Perlu tindakan</h2>
+          <p class="muted" id="action-count" role="status" aria-live="polite">memuat</p>
+        </div>
+        <ul class="action-list" id="action-list">
+          <li class="empty-line">Memuat daftar tindakan.</li>
+        </ul>
+      </section>
+
+      <section class="panel" aria-labelledby="today-title">
+        <div class="panel-head">
+          <h2 id="today-title">Pengingat hari ini</h2>
+          <p class="muted" id="today-date"></p>
+        </div>
+        <div class="today-row">
+          <div class="today-cell"><div class="k">Menunggu jawaban</div><div class="v" id="today-waiting">-</div></div>
+          <div class="today-cell"><div class="k">Dijawab sudah</div><div class="v" id="today-sudah">-</div></div>
+          <div class="today-cell"><div class="k">Dijawab belum</div><div class="v" id="today-belum">-</div></div>
+          <div class="today-cell"><div class="k">Tidak akan terkirim</div><div class="v" id="today-blocked">-</div></div>
         </div>
       </section>
 
-      <section class="grid panel">
-        <h2 class="section-title">Klasifikasi fase</h2>
-        <div class="phase-stats">
-          <div class="phase-card"><div class="label">Onboarding</div><div class="value" id="phase-onboarding">-</div></div>
-          <div class="phase-card"><div class="label">Kehamilan</div><div class="value" id="phase-kehamilan">-</div></div>
-          <div class="phase-card"><div class="label">Persalinan</div><div class="value" id="phase-persalinan">-</div></div>
-          <div class="phase-card"><div class="label">Pasca Kehamilan</div><div class="value" id="phase-pasca">-</div></div>
+      <section class="panel" aria-labelledby="phase-title">
+        <div class="panel-head">
+          <h2 id="phase-title">Peserta per fase</h2>
+          <p class="muted">Fase ditentukan dari data pendataan, persalinan, dan nifas.</p>
+        </div>
+        <div class="phase-line" id="phase-line">
+          <span class="item">Onboarding <b id="phase-onboarding">-</b></span>
+          <span class="item">Kehamilan <b id="phase-kehamilan">-</b></span>
+          <span class="item">Persalinan <b id="phase-persalinan">-</b></span>
+          <span class="item">Pasca kehamilan <b id="phase-pasca">-</b></span>
         </div>
       </section>
 
-      <section class="grid panel">
-        <div class="section-head">
-          <h2 class="section-title">Daftar user</h2>
-          <div class="users-tools">
-            <input id="users-search" class="search-input" type="search" autocomplete="off" aria-label="Cari user berdasarkan nama atau nomor WhatsApp" placeholder="Cari nama / nomor WA">
+      <section class="panel" aria-labelledby="users-title">
+        <div class="panel-head">
+          <h2 id="users-title">Daftar user</h2>
+          <div class="tools">
+            <input id="users-search" class="search-input" type="search" autocomplete="off" aria-label="Cari user berdasarkan nama atau nomor WhatsApp" placeholder="Cari nama atau nomor WA">
             <div class="phase-filters" role="group" aria-label="Filter fase">
               <button type="button" class="phase-filter" data-phase-filter="all" aria-pressed="true">Semua</button>
               <button type="button" class="phase-filter" data-phase-filter="onboarding" aria-pressed="false">Onboarding</button>
               <button type="button" class="phase-filter" data-phase-filter="kehamilan" aria-pressed="false">Kehamilan</button>
               <button type="button" class="phase-filter" data-phase-filter="persalinan" aria-pressed="false">Persalinan</button>
-              <button type="button" class="phase-filter" data-phase-filter="pasca_kehamilan" aria-pressed="false">Pasca Kehamilan</button>
+              <button type="button" class="phase-filter" data-phase-filter="pasca_kehamilan" aria-pressed="false">Pasca kehamilan</button>
             </div>
-            <p class="muted" id="users-count" role="status" aria-live="polite">Menampilkan semua user.</p>
           </div>
         </div>
-        <p class="muted table-hint">Geser tabel ke samping untuk melihat kolom lain. Kolom nama tetap menempel di kiri.</p>
+        <p class="muted" id="users-count" role="status" aria-live="polite">memuat</p>
         <p class="stale-note" id="users-note" hidden></p>
         <div class="table-wrap">
-        <table>
-          <caption class="muted">Daftar user beserta fase, status pengingat, dan progress program. Nama user adalah tautan ke halaman detail dan bisa dibuka dengan Enter atau Space.</caption>
-          <thead>
-            <tr>
-              <th scope="col">Nama</th>
-              <th scope="col">Fase</th>
-              <th scope="col">Status pengingat</th>
-              <th scope="col">Jam pengingat</th>
-              <th scope="col">Tanggal respon terakhir</th>
-              <th scope="col">Jawaban terakhir</th>
-              <th scope="col">Progress program</th>
-            </tr>
-          </thead>
-          <tbody id="users-body" aria-busy="true">
-            <tr><td colspan="7" class="muted">Memuat daftar user...</td></tr>
-          </tbody>
-        </table>
+          <table>
+            <caption>Nama user adalah tautan ke halaman detail, bisa dibuka dengan Enter atau Space.</caption>
+            <thead>
+              <tr>
+                <th scope="col">Nama</th>
+                <th scope="col">Fase</th>
+                <th scope="col">Status</th>
+                <th scope="col">Jam</th>
+                <th scope="col">Jawaban terakhir</th>
+                <th scope="col">Progres</th>
+              </tr>
+            </thead>
+            <tbody id="users-body" aria-busy="true">
+              <tr><td colspan="6" class="muted">Memuat daftar user.</td></tr>
+            </tbody>
+          </table>
         </div>
       </section>
 
-      <section class="grid panel">
-        <div class="section-head">
-          <h2 class="section-title">Catatan pengingat terbaru</h2>
-          <p class="muted">Menampilkan 50 catatan terbaru dari seluruh user.</p>
+      <section class="panel" aria-labelledby="logs-title">
+        <div class="panel-head">
+          <h2 id="logs-title">Catatan pengingat terbaru</h2>
+          <button type="button" class="ghost" id="logs-toggle">Tampilkan 50</button>
         </div>
         <p class="stale-note" id="logs-note" hidden></p>
-        <div class="table-wrap">
-        <table>
-          <caption class="muted">Catatan pengingat terbaru dari seluruh user.</caption>
-          <thead>
-            <tr>
-              <th scope="col">Tanggal pengingat</th>
-              <th scope="col">Nama</th>
-              <th scope="col">Jawaban</th>
-              <th scope="col">Jumlah jawaban sudah</th>
-              <th scope="col">Jumlah jawaban belum</th>
-              <th scope="col">Waktu dicatat</th>
-            </tr>
-          </thead>
-          <tbody id="logs-body" aria-busy="true">
-            <tr><td colspan="6" class="muted">Memuat catatan pengingat...</td></tr>
-          </tbody>
-        </table>
-        </div>
+        <ul class="log-list" id="logs-body" aria-busy="true">
+          <li class="empty-line">Memuat catatan pengingat.</li>
+        </ul>
       </section>
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script nonce="${nonce}">
+      const CSRF_TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+      function csrfHeaders(extra) {
+        return Object.assign({ 'X-CSRF-Token': CSRF_TOKEN }, extra || {});
+      }
       const toast = document.getElementById('toast');
       function showToast(message) {
         toast.textContent = message;
@@ -2243,311 +2271,349 @@ function renderAdminDashboardPage(options = {}) {
       }
       function classifyPhase(user) {
         const hasPostpartum = Number(user.postpartum_total || 0) > 0 || !!user.delivery_date_iso;
-        if (hasPostpartum) {
-          return 'pasca_kehamilan';
-        }
+        if (hasPostpartum) return 'pasca_kehamilan';
         const hasLaborSignals =
-          (Number(user.delivery_data_step || 0) > 0) ||
+          Number(user.delivery_data_step || 0) > 0 ||
           !!user.delivery_poll_stage ||
           !!user.delivery_hpl_poll_sent_date ||
           !!user.delivery_hpl3_poll_sent_date ||
           user.delivery_hpl_response === 'Sudah' ||
           user.delivery_hpl3_response === 'Sudah';
-        if (hasLaborSignals) {
-          return 'persalinan';
-        }
-        if (user.status === 'onboarding' || !user.hpht_iso) {
-          return 'onboarding';
-        }
+        if (hasLaborSignals) return 'persalinan';
+        if (user.status === 'onboarding' || !user.hpht_iso) return 'onboarding';
         return 'kehamilan';
       }
       function phaseLabel(phase) {
         if (phase === 'kehamilan') return 'Kehamilan';
         if (phase === 'persalinan') return 'Persalinan';
-        if (phase === 'pasca_kehamilan') return 'Pasca Kehamilan';
+        if (phase === 'pasca_kehamilan') return 'Pasca kehamilan';
         return 'Onboarding';
       }
       function statusLabel(status) {
         if (status === 'active') return 'Aktif';
         if (status === 'paused') return 'Dijeda';
         if (status === 'completed') return 'Selesai';
-        if (status === 'onboarding') return 'Pendataan awal';
+        if (status === 'onboarding') return 'Pendataan';
         return fmt(status);
       }
-      function phaseBadgeClass(phase) {
-        if (phase === 'kehamilan') return 'phase-kehamilan';
-        if (phase === 'persalinan') return 'phase-persalinan';
-        if (phase === 'pasca_kehamilan') return 'phase-pasca';
-        return 'phase-onboarding';
+      function statusTone(status) {
+        if (status === 'active') return 'b-ok';
+        if (status === 'paused') return 'b-warn';
+        if (status === 'completed') return 'b-mute';
+        return 'b-info';
+      }
+      function phaseTone(phase) {
+        if (phase === 'kehamilan') return 'b-ok';
+        if (phase === 'persalinan') return 'b-warn';
+        if (phase === 'pasca_kehamilan') return 'b-info';
+        return 'b-mute';
       }
       function clampPercent(value) {
         if (!Number.isFinite(value)) return 0;
-        if (value < 0) return 0;
-        if (value > 100) return 100;
-        return Math.round(value);
+        return Math.max(0, Math.min(100, Math.round(value)));
       }
-      function computeProgress(user, postpartumLogs) {
+      function computeProgress(user) {
         const totalLogs = Number(user.total_logs || 0);
         const totalAnswered = Number(user.total_answered || 0);
         const fePct = totalLogs > 0 ? clampPercent((totalAnswered * 100) / totalLogs) : 0;
-
-        const deliveryDone = !!user.delivery_data_completed_at || !!user.delivery_date_iso;
-        const deliveryState = deliveryDone
-          ? 'Selesai'
-          : (Number(user.delivery_data_step || 0) > 0 || user.delivery_hpl_response === 'Sudah' || user.delivery_hpl3_response === 'Sudah')
-            ? 'Proses'
-            : 'Belum';
-
-        const ppTotal = Number(user.postpartum_total || ((postpartumLogs || []).length || 0));
-        const ppSudah = Number(user.postpartum_sudah || ((postpartumLogs || []).filter((x) => x.response === 'Sudah').length || 0));
+        const ppTotal = Number(user.postpartum_total || 0);
+        const ppSudah = Number(user.postpartum_sudah || 0);
         const ppPct = ppTotal > 0 ? clampPercent((ppSudah * 100) / ppTotal) : 0;
-
-
-        return {
-          feText: 'FE ' + fePct + '%',
-          feClass: fePct >= 70 ? 'progress-ok' : (fePct > 0 ? 'progress-info' : 'progress-warn'),
-          deliveryText: 'Persalinan ' + deliveryState,
-          deliveryClass: deliveryState === 'Selesai' ? 'progress-ok' : (deliveryState === 'Proses' ? 'progress-info' : 'progress-warn'),
-          postpartumText: 'KF/KN ' + ppPct + '%',
-          postpartumClass: ppPct >= 75 ? 'progress-ok' : (ppPct > 0 ? 'progress-info' : 'progress-warn'),
-        };
+        const deliveryDone = !!user.delivery_data_completed_at || !!user.delivery_date_iso;
+        const deliveryState = deliveryDone ? 'Selesai'
+          : (Number(user.delivery_data_step || 0) > 0 || user.delivery_hpl_response === 'Sudah' || user.delivery_hpl3_response === 'Sudah') ? 'Proses' : 'Belum';
+        return { fePct, ppPct, deliveryState, started: totalLogs > 0 || ppTotal > 0 || deliveryDone };
       }
-      function createProgressBadges(progress) {
-        const wrap = document.createElement('div');
-        wrap.className = 'progress-badges';
-        const rows = [
-          [progress.feText, progress.feClass],
-          [progress.deliveryText, progress.deliveryClass],
-          [progress.postpartumText, progress.postpartumClass],
-        ];
-        for (const [text, cls] of rows) {
-          const badge = document.createElement('span');
-          badge.className = 'progress-badge ' + cls;
-          badge.textContent = text;
-          wrap.appendChild(badge);
-        }
-        return wrap;
-      }
-      const CSRF_TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
-      function csrfHeaders(extra) {
-        return Object.assign({ 'X-CSRF-Token': CSRF_TOKEN }, extra || {});
-      }
-      async function fetchJson(url) {
-        const res = await fetch(url, { headers: csrfHeaders({ 'Accept': 'application/json' }) });
+      async function fetchJson(url, options) {
+        const res = await fetch(url, Object.assign({ headers: csrfHeaders({ 'Accept': 'application/json' }) }, options || {}));
         if (res.status === 401) {
           window.location.href = '/admin/login?expired=1';
           throw new Error('Sesi berakhir. Silakan masuk lagi.');
         }
-        if (!res.ok) {
-          throw new Error('Permintaan gagal dengan kode ' + res.status);
-        }
+        if (!res.ok) throw new Error('Permintaan gagal dengan kode ' + res.status);
         return res.json();
       }
-      function renderPhaseStats(users) {
-        const counts = {
-          onboarding: 0,
-          kehamilan: 0,
-          persalinan: 0,
-          pasca_kehamilan: 0
-        };
-        for (const user of users) {
-          counts[classifyPhase(user)] += 1;
+      function setText(id, value) {
+        const node = document.getElementById(id);
+        if (node) node.textContent = value;
+      }
+      let healthCache = null;
+      let summaryCache = null;
+      let usersCache = [];
+      let logsCache = [];
+      let logsExpanded = false;
+      let activePhaseFilter = 'all';
+      let searchKeyword = '';
+
+      function renderStatus() {
+        const panel = document.getElementById('status-panel');
+        const health = healthCache || {};
+        const guard = health.guard || {};
+        const client = health.client || {};
+        const config = guard.config || {};
+        const runtime = health.runtime || {};
+        const ready = !!client.ready;
+        const paused = !!guard.paused;
+        let state = 'ok';
+        let title = 'Bot siap dan pengiriman normal';
+        if (!ready) {
+          state = 'bad';
+          title = 'Sesi WhatsApp tidak tersambung';
+        } else if (paused) {
+          state = 'bad';
+          title = 'Pengiriman sedang dijeda';
+        } else if (runtime.maintenance_mode || runtime.dry_run) {
+          state = 'warn';
+          title = runtime.maintenance_mode ? 'Mode perawatan aktif' : 'Mode simulasi aktif';
+        } else if (Number(guard.failures || 0) > 0) {
+          state = 'warn';
+          title = 'Ada kegagalan kirim pada sesi ini';
         }
-        document.getElementById('phase-onboarding').textContent = counts.onboarding;
-        document.getElementById('phase-kehamilan').textContent = counts.kehamilan;
-        document.getElementById('phase-persalinan').textContent = counts.persalinan;
-        document.getElementById('phase-pasca').textContent = counts.pasca_kehamilan;
-        const labels = {
-          all: 'Semua',
-          onboarding: 'Onboarding',
-          kehamilan: 'Kehamilan',
-          persalinan: 'Persalinan',
-          pasca_kehamilan: 'Pasca Kehamilan'
-        };
-        const filterCounts = { all: users.length, ...counts };
+        panel.dataset.state = state;
+        setText('status-title', title);
+        setText('status-sub', ready ? 'Sesi aktif, pengingat terjadwal berjalan di jendela kirim.' : 'Tautkan ulang WhatsApp sebelum pengingat diharapkan keluar.');
+        setText('fact-client', ready ? 'Tersambung' : 'Tidak tersambung');
+        setText('fact-ready', client.lastReadyAt ? fmtDateTime(client.lastReadyAt) : 'belum pernah');
+        const win = config.windowStartHour !== undefined ? (config.windowStartHour + ':00 sampai ' + config.windowEndHour + ':' + String(config.windowEndMinute || 0).padStart(2, '0')) : '-';
+        setText('fact-window', health.guard && health.guard.withinSendWindow === false ? win + ' (di luar jendela)' : win);
+        setText('fact-quota', (guard.lastDay || 0) + ' dari ' + (guard.dailyCap || '-'));
+        setText('fact-sent', String(guard.sent || 0));
+        setText('fact-failed', String(guard.failures || 0));
+        const chips = document.getElementById('status-chips');
+        chips.innerHTML = '';
+        const chipRows = [
+          [runtime.maintenance_mode ? 'Mode perawatan aktif' : 'Mode perawatan mati', runtime.maintenance_mode ? 'warn' : 'ok'],
+          [runtime.dry_run ? 'Mode simulasi aktif' : 'Pengiriman nyata', runtime.dry_run ? 'warn' : 'ok'],
+          [runtime.enforce_allowlist ? 'Allowlist aktif' : 'Allowlist mati', runtime.enforce_allowlist ? 'ok' : 'warn'],
+        ];
+        if (health.alert) {
+          chipRows.push(['Alarm terakhir: ' + health.alert.kind, 'bad']);
+        }
+        for (const [text, tone] of chipRows) {
+          const span = document.createElement('span');
+          span.className = 'chip';
+          span.dataset.tone = tone;
+          span.textContent = text;
+          chips.appendChild(span);
+        }
+        const note = document.getElementById('status-note');
+        if (health.alert) {
+          note.hidden = false;
+          note.textContent = 'Alarm ' + health.alert.kind + ' pada ' + fmtDateTime(health.alert.at) + ': ' + (health.alert.detail || '');
+        } else if (client.lastDisconnectReason) {
+          note.hidden = false;
+          note.textContent = 'Terputus terakhir: ' + client.lastDisconnectReason + ' (' + fmtDateTime(client.lastDisconnectedAt) + ')';
+        } else {
+          note.hidden = true;
+          note.textContent = '';
+        }
+      }
+
+      const ACTION_LABELS = {
+        resume: 'Aktifkan pengingat',
+        unblock: 'Buka blokir',
+        clear_send_failures: 'Reset penghitung gagal',
+      };
+      function actionFor(reasonCode) {
+        if (reasonCode === 'blocked') return 'unblock';
+        if (reasonCode === 'send_failure') return 'clear_send_failures';
+        return 'resume';
+      }
+      async function runUserAction(waId, action, button) {
+        const original = button.textContent;
+        button.disabled = true;
+        button.textContent = 'Memproses...';
+        try {
+          const result = await fetchJson('/admin/api/users/' + encodeURIComponent(waId) + '/actions', {
+            method: 'POST',
+            headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify({ action: action }),
+          });
+          if (!result.ok) throw new Error(result.error || 'gagal');
+          showToast('Selesai: ' + (ACTION_LABELS[action] || action));
+          await loadAll(false);
+        } catch (err) {
+          showToast('Gagal: ' + err.message);
+        } finally {
+          button.disabled = false;
+          button.textContent = original;
+        }
+      }
+      function renderActions() {
+        const list = document.getElementById('action-list');
+        const count = document.getElementById('action-count');
+        const items = (summaryCache && summaryCache.needsAction) || [];
+        list.innerHTML = '';
+        if (!items.length) {
+          count.textContent = 'tidak ada';
+          const li = document.createElement('li');
+          li.className = 'empty-line';
+          li.textContent = 'Tidak ada yang perlu dikerjakan. Semua user yang punya jam pengingat sedang berjalan.';
+          list.appendChild(li);
+          return;
+        }
+        count.textContent = items.length + ' user';
+        for (const item of items) {
+          const li = document.createElement('li');
+          li.className = 'action-item';
+          const left = document.createElement('div');
+          const name = document.createElement('div');
+          name.className = 'action-name';
+          name.textContent = item.name || item.wa_id;
+          const detail = document.createElement('div');
+          detail.className = 'action-detail';
+          detail.textContent = item.detail;
+          left.appendChild(name);
+          left.appendChild(detail);
+          const action = actionFor(item.reason);
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = action === 'resume' ? 'primary' : 'ghost';
+          btn.textContent = ACTION_LABELS[action];
+          btn.addEventListener('click', () => runUserAction(item.wa_id, action, btn));
+          const wrap = document.createElement('div');
+          wrap.className = 'actions';
+          const link = document.createElement('a');
+          link.className = 'ghost';
+          link.href = '/admin/users/' + encodeURIComponent(item.wa_id);
+          link.textContent = 'Detail';
+          wrap.appendChild(link);
+          wrap.appendChild(btn);
+          li.appendChild(left);
+          li.appendChild(wrap);
+          list.appendChild(li);
+        }
+      }
+      function renderToday() {
+        const summary = summaryCache || {};
+        const reminders = summary.reminders || {};
+        const users = summary.users || {};
+        setText('today-date', reminders.date ? 'Tanggal ' + reminders.date : '');
+        setText('today-waiting', fmt(reminders.todayWaiting));
+        setText('today-sudah', fmt(reminders.todaySudah));
+        setText('today-belum', fmt(reminders.todayBelum));
+        setText('today-blocked', fmt(users.total - users.runnable));
+      }
+      function renderPhases() {
+        const counts = { onboarding: 0, kehamilan: 0, persalinan: 0, pasca_kehamilan: 0 };
+        for (const user of usersCache) counts[classifyPhase(user)] += 1;
+        setText('phase-onboarding', counts.onboarding);
+        setText('phase-kehamilan', counts.kehamilan);
+        setText('phase-persalinan', counts.persalinan);
+        setText('phase-pasca', counts.pasca_kehamilan);
+        const labels = { all: 'Semua', onboarding: 'Onboarding', kehamilan: 'Kehamilan', persalinan: 'Persalinan', pasca_kehamilan: 'Pasca kehamilan' };
+        const filterCounts = Object.assign({ all: usersCache.length }, counts);
         for (const btn of document.querySelectorAll('.phase-filter')) {
           const key = btn.getAttribute('data-phase-filter');
           btn.textContent = labels[key] + ' (' + (filterCounts[key] || 0) + ')';
         }
       }
-      let usersCache = [];
-      let activePhaseFilter = 'all';
-      let searchKeyword = '';
       function renderUsersTable() {
         const tbody = document.getElementById('users-body');
         const filtered = usersCache.filter((user) => {
-          const phaseOk =
-            activePhaseFilter === 'all' || classifyPhase(user) === activePhaseFilter;
-          if (!phaseOk) return false;
+          if (activePhaseFilter !== 'all' && classifyPhase(user) !== activePhaseFilter) return false;
           if (!searchKeyword) return true;
-          const haystack = [user.wa_id, user.name].map((x) => String(x || '').toLowerCase()).join(' ');
-          return haystack.includes(searchKeyword);
+          return [user.wa_id, user.name].map((x) => String(x || '').toLowerCase()).join(' ').includes(searchKeyword);
         });
         tbody.innerHTML = '';
         const countNode = document.getElementById('users-count');
-        if (countNode) {
-          countNode.textContent = 'Menampilkan ' + filtered.length + ' dari ' + usersCache.length + ' user.';
-        }
+        if (countNode) countNode.textContent = 'Menampilkan ' + filtered.length + ' dari ' + usersCache.length + ' user.';
         if (!filtered.length) {
-          const emptyText = usersCache.length
-            ? 'Tidak ada user yang cocok dengan pencarian atau filter ini. Longgarkan filter untuk melihat user lain.'
-            : 'Belum ada user terdaftar. User baru muncul setelah percakapan WhatsApp pertama selesai didata.';
-          tbody.innerHTML = '<tr><td colspan="7" class="muted">' + emptyText + '</td></tr>';
+          const row = document.createElement('tr');
+          const cell = document.createElement('td');
+          cell.colSpan = 6;
+          cell.className = 'muted';
+          cell.textContent = usersCache.length
+            ? 'Tidak ada user yang cocok. Longgarkan filter atau kosongkan pencarian.'
+            : 'Belum ada user. User muncul setelah percakapan WhatsApp pertama selesai didata.';
+          row.appendChild(cell);
+          tbody.appendChild(row);
           return;
         }
         for (const user of filtered) {
           const tr = document.createElement('tr');
-          tr.dataset.waId = user.wa_id;
-          const cells = [
-            user.name,
-            phaseLabel(classifyPhase(user)),
-            statusLabel(user.status),
-            user.reminder_time,
-            user.last_response_date,
-            user.last_response
-          ];
-          cells.forEach((value, index) => {
-            const td = document.createElement('td');
-            if (index === 0) {
-              const link = document.createElement('a');
-              link.className = 'row-link';
-              link.href = '/admin/users/' + encodeURIComponent(user.wa_id);
-              link.textContent = fmt(value);
-              td.classList.add('name-cell');
-              td.appendChild(link);
-            } else if (index === 1) {
-              const badge = document.createElement('span');
-              const phase = classifyPhase(user);
-              badge.className = 'phase-badge ' + phaseBadgeClass(phase);
-              badge.textContent = phaseLabel(phase);
-              td.appendChild(badge);
-            } else {
-              td.textContent = fmt(value);
-            }
-            tr.appendChild(td);
-          });
-          const tdProgress = document.createElement('td');
-          tdProgress.appendChild(createProgressBadges(computeProgress(user)));
-          tr.appendChild(tdProgress);
+          const phase = classifyPhase(user);
+          const progress = computeProgress(user);
+          const nameCell = document.createElement('td');
+          nameCell.className = 'name-cell';
+          const link = document.createElement('a');
+          link.className = 'row-link';
+          link.href = '/admin/users/' + encodeURIComponent(user.wa_id);
+          link.textContent = fmt(user.name);
+          nameCell.appendChild(link);
+          tr.appendChild(nameCell);
+
+          const phaseCell = document.createElement('td');
+          const phaseBadge = document.createElement('span');
+          phaseBadge.className = 'badge ' + phaseTone(phase);
+          phaseBadge.textContent = phaseLabel(phase);
+          phaseCell.appendChild(phaseBadge);
+          tr.appendChild(phaseCell);
+
+          const statusCell = document.createElement('td');
+          const statusBadge = document.createElement('span');
+          statusBadge.className = 'badge ' + statusTone(user.status);
+          statusBadge.textContent = statusLabel(user.status);
+          statusCell.appendChild(statusBadge);
+          tr.appendChild(statusCell);
+
+          const timeCell = document.createElement('td');
+          timeCell.className = 'num';
+          timeCell.textContent = fmt(user.reminder_time);
+          tr.appendChild(timeCell);
+
+          const answerCell = document.createElement('td');
+          answerCell.textContent = user.last_response ? user.last_response + ' (' + fmt(user.last_response_date) + ')' : 'belum ada';
+          tr.appendChild(answerCell);
+
+          const progressCell = document.createElement('td');
+          if (!progress.started) {
+            progressCell.className = 'muted';
+            progressCell.textContent = 'belum mulai';
+          } else {
+            const bits = ['FE ' + progress.fePct + '%'];
+            if (progress.deliveryState !== 'Belum') bits.push('Persalinan ' + progress.deliveryState);
+            if (progress.ppPct > 0 || progress.deliveryState === 'Selesai') bits.push('KF/KN ' + progress.ppPct + '%');
+            progressCell.className = 'num';
+            progressCell.textContent = bits.join(', ');
+          }
+          tr.appendChild(progressCell);
           tbody.appendChild(tr);
         }
       }
-      async function loadSummary() {
-        const data = await fetchJson('/admin/api/summary');
-        const summaryNote = document.getElementById('stats-note');
-        if (summaryNote) {
-          summaryNote.dataset.tone = 'ok';
-          summaryNote.textContent = 'Ringkasan dimuat dari data terbaru.';
-        }
-        document.getElementById('stat-users-total').textContent = fmt(data.users.total);
-        document.getElementById('stat-users-active').textContent = fmt(data.users.active);
-        document.getElementById('stat-users-paused').textContent = fmt(data.users.paused);
-        document.getElementById('stat-users-completed').textContent = fmt(data.users.completed);
-        document.getElementById('stat-today-sudah').textContent = fmt(data.reminders.todaySudah);
-        document.getElementById('stat-today-belum').textContent = fmt(data.reminders.todayBelum);
-      }
-      async function loadUsers() {
-        const data = await fetchJson('/admin/api/users');
-        usersCache = data.users || [];
-        renderPhaseStats(usersCache);
-        renderUsersTable();
-      }
-      async function loadLogs() {
-        const data = await fetchJson('/admin/api/logs');
-        const tbody = document.getElementById('logs-body');
-        tbody.innerHTML = '';
-        if (!data.logs.length) {
-          tbody.innerHTML = '<tr><td colspan="6" class="muted">Belum ada catatan pengingat. Catatan muncul setelah bot mengirim pengingat pertama dan user menjawabnya.</td></tr>';
+      function renderLogs() {
+        const list = document.getElementById('logs-body');
+        const limit = logsExpanded ? 50 : 10;
+        list.innerHTML = '';
+        if (!logsCache.length) {
+          const li = document.createElement('li');
+          li.className = 'empty-line';
+          li.textContent = 'Belum ada catatan. Catatan muncul setelah pengingat pertama terkirim dan dijawab user.';
+          list.appendChild(li);
           return;
         }
-        for (const log of data.logs) {
-          const tr = document.createElement('tr');
-          const cells = [
-              log.reminder_date,
-              log.name,
-              log.response,
-              log.response_sudah_count,
-              log.response_belum_count,
-              fmtDateTime(log.created_at)
-            ];
-          for (const value of cells) {
-            const td = document.createElement('td');
-            td.textContent = fmt(value);
-            tr.appendChild(td);
-          }
-          tbody.appendChild(tr);
+        for (const log of logsCache.slice(0, limit)) {
+          const li = document.createElement('li');
+          li.className = 'log-item';
+          const left = document.createElement('div');
+          const who = document.createElement('div');
+          who.textContent = fmt(log.name) + ' menjawab ' + String(fmt(log.response)).toLowerCase();
+          const meta = document.createElement('div');
+          meta.className = 'log-meta';
+          meta.textContent = 'Pengingat ' + fmt(log.reminder_date) + ', dicatat ' + fmtDateTime(log.created_at);
+          left.appendChild(who);
+          left.appendChild(meta);
+          const right = document.createElement('div');
+          right.className = 'log-meta num';
+          right.textContent = 'sudah ' + fmt(log.response_sudah_count) + ' / belum ' + fmt(log.response_belum_count);
+          li.appendChild(left);
+          li.appendChild(right);
+          list.appendChild(li);
         }
+        const toggle = document.getElementById('logs-toggle');
+        toggle.hidden = logsCache.length <= 10;
+        toggle.textContent = logsExpanded ? 'Tampilkan 10' : 'Tampilkan 50';
       }
-      const refreshBtn = document.getElementById('refresh-btn');
-      const errorBanner = document.getElementById('error-banner');
-      const errorText = document.getElementById('error-text');
-      function setPanelNote(id, text) {
-        const node0 = document.getElementById(id);
-        if (node0 && node0.id === 'stats-note' && text) {
-          node0.dataset.tone = 'bad';
-        }
-        const node = document.getElementById(id);
-        if (!node) return;
-        if (text) {
-          node.textContent = text;
-          node.hidden = false;
-        } else {
-          node.textContent = '';
-          node.hidden = true;
-        }
-      }
-      function showErrorBanner(message) {
-        errorText.textContent = message;
-        errorBanner.hidden = false;
-      }
-      function hideErrorBanner() {
-        errorBanner.hidden = true;
-        errorText.textContent = '';
-      }
-      async function loadPanel(task) {
-        const body = document.getElementById(task.bodyId);
-        if (body) body.setAttribute('aria-busy', 'true');
-        try {
-          await task.run();
-          if (task.noteId) setPanelNote(task.noteId, '');
-          return { ok: true, error: '' };
-        } catch (err) {
-          if (task.noteId) {
-            setPanelNote(
-              task.noteId,
-              'Panel ini gagal diperbarui: ' + err.message + '. Isi di bawah adalah hasil muat terakhir yang berhasil.'
-            );
-          }
-          return { ok: false, error: err.message };
-        } finally {
-          if (body) body.setAttribute('aria-busy', 'false');
-        }
-      }
-      async function loadAll() {
-        hideErrorBanner();
-        refreshBtn.disabled = true;
-        refreshBtn.textContent = 'Memuat...';
-        const tasks = [
-          { noteId: 'users-note', bodyId: 'users-body', run: loadUsers },
-          { noteId: 'logs-note', bodyId: 'logs-body', run: loadLogs },
-          { noteId: 'stats-note', bodyId: 'stats-section', run: loadSummary }
-        ];
-        const results = await Promise.all(tasks.map((task) => loadPanel(task)));
-        const failed = results.filter((result) => !result.ok);
-        if (failed.length) {
-          showErrorBanner(
-            'Sebagian data gagal dimuat (' + failed.map((result) => result.error).join('; ') + '). Panel yang gagal ditandai di atas tabelnya. Angka dan tabel yang masih tampil berasal dari muat terakhir yang berhasil.'
-          );
-          document.getElementById('last-updated').textContent = 'Gagal memperbarui: ' + new Date().toLocaleString('id-ID');
-        } else {
-          document.getElementById('last-updated').textContent = new Date().toLocaleString('id-ID');
-          showToast('Data sudah diperbarui.');
-        }
-        refreshBtn.disabled = false;
-        refreshBtn.textContent = 'Muat ulang';
-      }
-      document.getElementById('error-retry').addEventListener('click', () => loadAll());
-      document.getElementById('refresh-btn').addEventListener('click', () => loadAll());
       function syncUrlState() {
         const params = new URLSearchParams();
         if (activePhaseFilter !== 'all') params.set('phase', activePhaseFilter);
@@ -2557,29 +2623,72 @@ function renderAdminDashboardPage(options = {}) {
       }
       function paintFilterState() {
         for (const btn of document.querySelectorAll('.phase-filter')) {
-          const isActive = btn.getAttribute('data-phase-filter') === activePhaseFilter;
-          btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+          btn.setAttribute('aria-pressed', btn.getAttribute('data-phase-filter') === activePhaseFilter ? 'true' : 'false');
         }
       }
       function readUrlState() {
         const params = new URLSearchParams(location.search);
         const asked = params.get('phase') || 'all';
-        const knownPhases = Array.from(document.querySelectorAll('.phase-filter')).map((btn) => btn.getAttribute('data-phase-filter'));
-        activePhaseFilter = knownPhases.includes(asked) ? asked : 'all';
+        const known = Array.from(document.querySelectorAll('.phase-filter')).map((btn) => btn.getAttribute('data-phase-filter'));
+        activePhaseFilter = known.includes(asked) ? asked : 'all';
         searchKeyword = (params.get('q') || '').trim().toLowerCase();
         const search = document.getElementById('users-search');
         if (search) search.value = searchKeyword;
         paintFilterState();
       }
-      function setPhaseFilter(next) {
-        activePhaseFilter = next || 'all';
-        paintFilterState();
-        syncUrlState();
-        renderUsersTable();
+      async function loadPanel(noteId, task) {
+        try {
+          await task();
+          if (noteId) {
+            const node = document.getElementById(noteId);
+            if (node) { node.hidden = true; node.textContent = ''; }
+          }
+          return { ok: true, error: '' };
+        } catch (err) {
+          if (noteId) {
+            const node = document.getElementById(noteId);
+            if (node) {
+              node.hidden = false;
+              node.textContent = 'Bagian ini gagal diperbarui: ' + err.message + '. Isi di bawah adalah hasil muat terakhir yang berhasil.';
+            }
+          }
+          return { ok: false, error: err.message };
+        }
       }
+      async function loadAll(showFeedback) {
+        const refreshBtn = document.getElementById('refresh-btn');
+        const errorBanner = document.getElementById('error-banner');
+        const errorText = document.getElementById('error-text');
+        errorBanner.hidden = true;
+        refreshBtn.disabled = true;
+        refreshBtn.textContent = 'Memuat...';
+        const results = await Promise.all([
+          loadPanel('status-note', async () => { healthCache = await fetchJson('/admin/api/health'); renderStatus(); }),
+          loadPanel('users-note', async () => { summaryCache = await fetchJson('/admin/api/summary'); renderToday(); renderActions(); }),
+          loadPanel('users-note', async () => { const data = await fetchJson('/admin/api/users'); usersCache = data.users || []; renderPhases(); renderUsersTable(); }),
+          loadPanel('logs-note', async () => { const data = await fetchJson('/admin/api/logs'); logsCache = data.logs || []; renderLogs(); }),
+        ]);
+        const failed = results.filter((r) => !r.ok);
+        if (failed.length) {
+          errorText.textContent = 'Sebagian data gagal dimuat (' + failed.map((r) => r.error).join('; ') + '). Bagian yang gagal ditandai di atasnya.';
+          errorBanner.hidden = false;
+          setText('last-updated', 'gagal memperbarui ' + new Date().toLocaleString('id-ID'));
+        } else {
+          setText('last-updated', new Date().toLocaleString('id-ID'));
+          if (showFeedback !== false) showToast('Data sudah diperbarui.');
+        }
+        refreshBtn.disabled = false;
+        refreshBtn.textContent = 'Muat ulang data';
+      }
+      document.getElementById('refresh-btn').addEventListener('click', () => loadAll(true));
+      document.getElementById('error-retry').addEventListener('click', () => loadAll(true));
+      document.getElementById('logs-toggle').addEventListener('click', () => { logsExpanded = !logsExpanded; renderLogs(); });
       for (const btn of document.querySelectorAll('.phase-filter')) {
         btn.addEventListener('click', () => {
-          setPhaseFilter(btn.getAttribute('data-phase-filter'));
+          activePhaseFilter = btn.getAttribute('data-phase-filter') || 'all';
+          paintFilterState();
+          syncUrlState();
+          renderUsersTable();
         });
       }
       document.getElementById('users-search').addEventListener('input', (event) => {
@@ -2588,7 +2697,7 @@ function renderAdminDashboardPage(options = {}) {
         renderUsersTable();
       });
       readUrlState();
-      loadAll();
+      loadAll(false);
     </script>
   </body>
 </html>`;
@@ -2604,11 +2713,14 @@ function renderAdminUserDetailPage(waId, options = {}) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="${csrf}">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <title>Detail User - RemindCare Admin</title>
     <style nonce="${nonce}">
       :root { --bg:#f8fafc; --panel:#fff; --text:#111827; --muted:#667085; --border:#cfd6e3; --border-strong:#7d8695; --control-border:#7d8695; --placeholder:#667085; --focus:#4f46e5; --accent:#4f46e5; --bad:#b42318; --shadow:0 14px 34px rgba(17,24,39,.07); }
       *{box-sizing:border-box}
-      body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+      body{margin:0;font-family:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
       .container{width:min(1080px,100%);margin:0 auto;padding:24px}
       .table-wrap,.table-wrap table{max-width:100%}
       .top{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;justify-content:space-between}
@@ -3500,6 +3612,7 @@ async function initDb(db) {
   await migrateLegacyPostpartumVisitLogs(db);
 
   await ensureAliasTable(db);
+  await reconcileRunnableUsers(db);
 }
 
 async function getUser(db, waId) {
@@ -3824,6 +3937,63 @@ function buildPostpartumSnapshot(postpartumLogs) {
   return snapshot;
 }
 
+// Aturan "perlu tindakan": setiap kondisi di bawah berarti user TIDAK akan menerima
+// pengingat hari ini, atau pengiriman ke dia sedang bermasalah. Dashboard memakai daftar
+// ini supaya operator tidak perlu menebak dari angka nol.
+function buildNeedsAction(users) {
+  const items = [];
+  for (const user of users || []) {
+    const status = String(user.status || "");
+    const reason = (() => {
+      if (user.is_blocked) {
+        return { code: "blocked", text: "Nomor diblokir", action: "Buka blokir" };
+      }
+      if (status === "completed") {
+        return null;
+      }
+      if (user.reminder_time && status !== "active") {
+        return {
+          code: "not_running",
+          text: `Punya jam ${user.reminder_time} tetapi status ${status || "kosong"}`,
+          action: "Aktifkan pengingat",
+        };
+      }
+      if (!user.reminder_time && status === "active") {
+        return {
+          code: "no_time",
+          text: "Aktif tetapi belum punya jam pengingat",
+          action: "Isi jam pengingat",
+        };
+      }
+      if (status === "paused" || Number(user.allow_remindcare) === 0) {
+        return { code: "paused", text: "Pengingat sedang dijeda", action: "Lanjutkan" };
+      }
+      const failCount = Math.max(
+        Number(user.fe_poll_fail_count || 0),
+        Number(user.delivery_poll_fail_count || 0),
+      );
+      if (failCount >= 2) {
+        return {
+          code: "send_failure",
+          text: `Gagal kirim ${failCount} kali beruntun`,
+          action: "Periksa nomor dan reset penghitung",
+        };
+      }
+      return null;
+    })();
+    if (reason) {
+      items.push({
+        wa_id: user.wa_id,
+        name: user.name || null,
+        reason: reason.code,
+        detail: reason.text,
+        action: reason.action,
+      });
+    }
+  }
+  return items;
+}
+
 async function getAdminSummary(db) {
   const total = await dbGet(db, "SELECT COUNT(*) as count FROM users");
   const active = await dbGet(
@@ -3857,6 +4027,28 @@ async function getAdminSummary(db) {
     "SELECT COUNT(*) as count FROM reminder_logs WHERE reminder_date = ? AND response = 'Belum'",
     [today],
   );
+  const runnable = await dbGet(
+    db,
+    `SELECT COUNT(*) as count FROM users
+     WHERE status = 'active' AND allow_remindcare = 1 AND reminder_time IS NOT NULL AND is_blocked = 0`,
+  );
+  const waiting = await dbGet(
+    db,
+    `SELECT COUNT(*) as count FROM users
+     WHERE status = 'active' AND allow_remindcare = 1 AND reminder_time IS NOT NULL
+       AND is_blocked = 0 AND (last_reminder_date IS NULL OR last_reminder_date <> ?)`,
+    [today],
+  );
+  const onboarding = await dbGet(
+    db,
+    "SELECT COUNT(*) as count FROM users WHERE status = 'onboarding'",
+  );
+  const actionRows = await dbAll(
+    db,
+    `SELECT wa_id, name, status, reminder_time, allow_remindcare, is_blocked,
+            fe_poll_fail_count, delivery_poll_fail_count
+     FROM users ORDER BY name COLLATE NOCASE`,
+  );
   return {
     users: {
       total: total ? total.count : 0,
@@ -3865,11 +4057,16 @@ async function getAdminSummary(db) {
       completed: completed ? completed.count : 0,
       allowed: allowed ? allowed.count : 0,
       blocked: blocked ? blocked.count : 0,
+      runnable: runnable ? runnable.count : 0,
+      onboarding: onboarding ? onboarding.count : 0,
     },
     reminders: {
       todaySudah: todaySudah ? todaySudah.count : 0,
       todayBelum: todayBelum ? todayBelum.count : 0,
+      todayWaiting: waiting ? waiting.count : 0,
+      date: today,
     },
+    needsAction: buildNeedsAction(actionRows),
   };
 }
 
@@ -4837,6 +5034,27 @@ async function processPostpartumVisitReminders(db, client, user, now) {
       break;
     }
   }
+}
+
+// Keputusan pemilik: begitu jam pengingat terisi, user harus benar-benar diingatkan.
+// Tanpa pengaman ini, user yang punya jam tapi statusnya masih onboarding tidak pernah
+// masuk scheduler, dan di dashboard terlihat sebagai "Aktif 0" tanpa penjelasan.
+async function reconcileRunnableUsers(db) {
+  const result = await dbRun(
+    db,
+    `UPDATE users
+     SET status = 'active',
+         allow_remindcare = 1
+     WHERE reminder_time IS NOT NULL
+       AND allow_remindcare = 1
+       AND is_blocked = 0
+       AND status = 'onboarding'`,
+  );
+  const changed = result && typeof result.changes === "number" ? result.changes : 0;
+  if (changed > 0) {
+    console.log(`${changed} user diaktifkan karena jam pengingat sudah terisi.`);
+  }
+  return changed;
 }
 
 async function sendDailyPoll(db, client, user, now, options = {}) {
@@ -6310,6 +6528,14 @@ async function applyAdminUserAction(db, user, action, value) {
     });
     return { ok: true, action, status: "completed" };
   }
+  if (action === "unblock") {
+    await updateUser(db, user.wa_id, {
+      is_blocked: 0,
+      allow_remindcare: 1,
+      status: "active",
+    });
+    return { ok: true, action, status: "active" };
+  }
   if (action === "clear_send_failures") {
     await updateUser(db, user.wa_id, {
       fe_poll_fail_count: 0,
@@ -7464,6 +7690,8 @@ module.exports = {
   noteScheduledSend,
   isOverDailyMessageQuota,
   sendAlert,
+  reconcileRunnableUsers,
+  buildNeedsAction,
   isReminderControlCommand,
   parsePostpartumCorrection,
   resolveVisitCode,

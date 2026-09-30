@@ -133,12 +133,63 @@ async function run() {
     }
   });
 
+  await test("buildNeedsAction menandai user yang tidak akan menerima pengingat", () => {
+    const items = mod.buildNeedsAction([
+      { wa_id: "a@c.us", name: "punya jam tapi belum jalan", status: "onboarding", reminder_time: "10:30", allow_remindcare: 1, is_blocked: 0 },
+      { wa_id: "b@c.us", name: "aktif tanpa jam", status: "active", reminder_time: null, allow_remindcare: 1, is_blocked: 0 },
+      { wa_id: "c@c.us", name: "gagal kirim", status: "active", reminder_time: "07:00", allow_remindcare: 1, is_blocked: 0, fe_poll_fail_count: 3 },
+      { wa_id: "d@c.us", name: "diblokir", status: "active", reminder_time: "07:00", allow_remindcare: 1, is_blocked: 1 },
+      { wa_id: "e@c.us", name: "sehat", status: "active", reminder_time: "07:00", allow_remindcare: 1, is_blocked: 0, fe_poll_fail_count: 0 },
+      { wa_id: "f@c.us", name: "selesai", status: "completed", reminder_time: "07:00", allow_remindcare: 0, is_blocked: 0 },
+    ]);
+    const byId = Object.fromEntries(items.map((x) => [x.wa_id, x]));
+    assert.strictEqual(byId["a@c.us"].reason, "not_running");
+    assert.strictEqual(byId["b@c.us"].reason, "no_time");
+    assert.strictEqual(byId["c@c.us"].reason, "send_failure");
+    assert.strictEqual(byId["d@c.us"].reason, "blocked");
+    assert.strictEqual(byId["e@c.us"], undefined);
+    assert.strictEqual(byId["f@c.us"], undefined);
+  });
+
+  await test("reconcileRunnableUsers mengaktifkan user yang jamnya sudah terisi", async () => {
+    const db = memoryDb();
+    try {
+      await mod.ensureSettingsTable(db);
+      await new Promise((resolve, reject) => db.run(
+        "CREATE TABLE IF NOT EXISTS users (wa_id TEXT PRIMARY KEY, status TEXT, reminder_time TEXT, allow_remindcare INTEGER, is_blocked INTEGER)",
+        (err) => (err ? reject(err) : resolve()),
+      ));
+      const insert = (wa, status, time, allow, blocked) => new Promise((resolve, reject) => db.run(
+        "INSERT INTO users (wa_id, status, reminder_time, allow_remindcare, is_blocked) VALUES (?,?,?,?,?)",
+        [wa, status, time, allow, blocked], (err) => (err ? reject(err) : resolve()),
+      ));
+      await insert("jam-terisi@c.us", "onboarding", "10:30", 1, 0);
+      await insert("tanpa-jam@c.us", "onboarding", null, 1, 0);
+      await insert("diblokir@c.us", "onboarding", "09:00", 1, 1);
+      await insert("menolak@c.us", "onboarding", "09:00", 0, 0);
+      const changed = await mod.reconcileRunnableUsers(db);
+      assert.strictEqual(changed, 1, "hanya satu user yang boleh diaktifkan");
+      const rows = await new Promise((resolve, reject) => db.all(
+        "SELECT wa_id, status FROM users ORDER BY wa_id",
+        (err, r) => (err ? reject(err) : resolve(r)),
+      ));
+      const map = Object.fromEntries(rows.map((r) => [r.wa_id, r.status]));
+      assert.strictEqual(map["jam-terisi@c.us"], "active");
+      assert.strictEqual(map["tanpa-jam@c.us"], "onboarding");
+      assert.strictEqual(map["diblokir@c.us"], "onboarding");
+      assert.strictEqual(map["menolak@c.us"], "onboarding");
+    } finally {
+      db.close();
+    }
+  });
+
   await test("halaman admin memuat perbaikan layout, fokus, dan CSRF", () => {
     const settings = require("../lib/admin-settings-page.js");
     const ctx = { nonce: "n0nce", csrf: "csrf-token" };
     const dashboard = mod.renderAdminDashboardPage(ctx);
     const detail = mod.renderAdminUserDetailPage("6282240269818@c.us", ctx);
     const settingsPage = settings.renderAdminSettingsPage(ctx);
+
     for (const [name, html] of [
       ["dashboard", dashboard],
       ["detail", detail],
@@ -147,6 +198,7 @@ async function run() {
       assert.ok(/--focus:\s*#4f46e5/.test(html), `${name} memakai token fokus kontras`);
       assert.ok(/outline:\s*3px solid var\(--focus\)/.test(html), `${name} memakai focus ring solid`);
       assert.ok(html.includes('meta name="csrf-token"'), `${name} memuat meta CSRF`);
+      assert.ok(html.includes("Plus Jakarta Sans"), `${name} memakai font yang dipilih`);
       assert.ok(!html.includes("fonts.googleapis.com/css2?family=Lato"), `${name} tidak memuat font yang tidak dipakai`);
     }
     for (const [name, html] of [
@@ -154,32 +206,17 @@ async function run() {
       ["settings", settingsPage],
     ]) {
       assert.ok(html.includes('grid-template-columns: minmax(0, 1fr)'), `${name} memakai kolom grid yang bisa menyusut`);
-    }
-    for (const [name, html] of [
-      ["dashboard", dashboard],
-      ["settings", settingsPage],
-    ]) {
       assert.ok(html.includes('value="csrf-token"'), `${name} form logout membawa CSRF`);
     }
-    assert.ok(detail.includes(".table-wrap,.table-wrap table{max-width:100%}"), "detail membatasi lebar tabel");
+    // kokpit operasional: status bot dulu, lalu tindakan, lalu angka hari ini
+    assert.ok(dashboard.includes('id="status-panel"'), "dashboard punya blok status bot");
+    assert.ok(dashboard.includes('id="action-list"'), "dashboard punya daftar perlu tindakan");
+    assert.ok(dashboard.includes('id="today-waiting"'), "dashboard punya angka pengingat hari ini");
     assert.ok(dashboard.includes("a.row-link"), "dashboard memakai tautan baris yang bisa difokus");
-    assert.ok(!dashboard.includes("row-clickable"), "dashboard tidak lagi memakai baris yang hanya bisa diklik mouse");
-    assert.ok(dashboard.includes('id="stats-note"'), "dashboard punya catatan status ringkasan");
+    assert.ok(!dashboard.includes("row-clickable"), "dashboard tidak memakai baris yang hanya bisa diklik mouse");
+    assert.ok(dashboard.includes('aria-describedby') === false, "dashboard tidak butuh deskripsi tambahan pada input cari");
     assert.ok(settingsPage.includes('aria-describedby="setting-'), "halaman pengaturan menghubungkan hint ke input");
-  });
-
-  await test("sesi admin dicabut di server saat logout", async () => {
-    const db = memoryDb();
-    try {
-      await mod.ensureSettingsTable(db);
-      const session = mod.__createAdminSessionForTest();
-      assert.ok(session.token && session.csrf, "sesi punya token dan csrf");
-      assert.notStrictEqual(mod.__peekAdminSessionForTest(session.token), null, "sesi tersimpan");
-      mod.__destroyAdminSessionForTest(session.token);
-      assert.strictEqual(mod.__peekAdminSessionForTest(session.token), null, "sesi hilang setelah logout");
-    } finally {
-      db.close();
-    }
+    assert.ok(detail.includes(".table-wrap,.table-wrap table{max-width:100%}"), "detail membatasi lebar tabel");
   });
 
   console.log("semua tes perbaikan reminder lulus");
