@@ -11,6 +11,7 @@ const qrcode = require("qrcode-terminal");
 const { Client, LocalAuth, Poll } = require("whatsapp-web.js");
 const { createSendGuard } = require("./lib/send-guard");
 const { renderAdminSettingsPage } = require("./lib/admin-settings-page");
+const { ADMIN_CSS, icon } = require("./lib/admin-ui");
 const { loadEnvFile } = require("./lib/env-file");
 
 // Muat .env sebelum konstanta di bawah dibaca. Env dari shell/systemd tetap menang.
@@ -1788,142 +1789,48 @@ function escapeForScriptContext(value) {
 
 function renderAdminLoginPage(message, options = {}) {
   const nonce = options && options.nonce ? String(options.nonce) : "";
-  const alert = message
-    ? `<div class="alert" role="alert">${escapeHtml(message)}</div>`
-    : "";
+  const alert = message ? `<div class="banner" role="alert">${icon("alert")}<p>${escapeHtml(message)}</p></div>` : "";
   return `<!doctype html>
 <html lang="id">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Masuk - RemindCare Admin</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <title>RemindCare Admin</title>
-    <style nonce="${nonce}">
-      :root {
-        --bg: #f8fafc;
-        --panel: #ffffff;
-        --text: #111827;
-        --muted: #667085;
-        --border: #cfd6e3;
-        --border-strong: #7d8695;
-        --control-border: #7d8695;
-        --placeholder: #667085;
-        --focus: #4f46e5;
-        --accent: #4f46e5;
-        --accent-ink: #ffffff;
-        --danger: #b42318;
-        --danger-bg: #fff1f0;
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        min-height: 100vh;
-        min-height: 100dvh;
-        display: grid;
-        place-items: center;
-        padding: 24px;
-      }
-      .card {
-        width: 100%;
-        max-width: 420px;
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 18px;
-        box-shadow: 0 18px 42px rgba(17, 24, 39, 0.08);
-        padding: 28px;
-        display: grid;
-        gap: 18px;
-      }
-      h1 {
-        margin: 0;
-        font-size: 24px;
-        letter-spacing: -0.02em;
-      }
-      .sub {
-        margin: 6px 0 0;
-        color: var(--muted);
-        font-size: 14px;
-        line-height: 1.5;
-      }
-      form { display: grid; gap: 14px; }
-      label {
-        display: grid;
-        gap: 7px;
-        font-size: 13px;
-        font-weight: 650;
-        color: #344054;
-      }
-      input {
-        width: 100%;
-        min-height: 44px;
-        padding: 11px 12px;
-        border-radius: 10px;
-        border: 1px solid var(--control-border);
-        font-size: 14px;
-        font-family: inherit;
-        background: #fff;
-        color: var(--text);
-      }
-      input::placeholder { color: var(--placeholder); }
-      button {
-        min-height: 44px;
-        padding: 11px 14px;
-        border-radius: 10px;
-        border: 1px solid #4338ca;
-        background: var(--accent);
-        color: var(--accent-ink);
-        font-weight: 700;
-        cursor: pointer;
-        font-size: 14px;
-        font-family: inherit;
-      }
-      button:hover { background: #4338ca; }
-      input:focus-visible, button:focus-visible {
-        outline: 3px solid var(--focus);
-        outline-offset: 2px;
-        border-color: var(--focus);
-      }
-      .alert {
-        background: var(--danger-bg);
-        border: 1px solid #fecdca;
-        color: var(--danger);
-        padding: 12px 14px;
-        border-radius: 12px;
-        font-size: 13px;
-        font-weight: 650;
-        line-height: 1.45;
-      }
-      @media (max-width: 420px) {
-        body { padding: 16px; }
-        .card { padding: 22px; border-radius: 16px; }
-      }
-      @media (prefers-reduced-motion: reduce) {
-        * { animation: none !important; transition: none !important; }
-      }
+    <style nonce="${nonce}">${ADMIN_CSS}
+      main.login { min-height: 100dvh; display: grid; place-items: center; padding: 20px; }
+      .login-card { width: 100%; max-width: 360px; }
+      .login-card .panel-body { display: grid; gap: 12px; padding: 14px; }
+      .login-card h1 { font-size: 14px; }
     </style>
   </head>
   <body>
-    <div class="card">
-      <div>
-        <h1>RemindCare Admin</h1>
-        <p class="sub">Masuk untuk akses dashboard</p>
+    <main class="login">
+      <div class="login-card">
+        <div class="panel">
+          <div class="panel-head">
+            <h2>${icon("pulse")}RemindCare Admin</h2>
+            <span class="badge">panel internal</span>
+          </div>
+          <div class="panel-body">
+            ${alert}
+            <form method="post" action="/admin/login">
+              <div class="field">
+                <label for="login-username">Username</label>
+                <input id="login-username" name="username" type="text" autocomplete="username" placeholder="admin">
+              </div>
+              <div class="field" style="margin-top:10px">
+                <label for="login-password">Password</label>
+                <input id="login-password" name="password" type="password" autocomplete="current-password" required>
+              </div>
+              <button type="submit" class="btn-primary" style="margin-top:12px;width:100%">${icon("logout")}Masuk</button>
+            </form>
+          </div>
+        </div>
       </div>
-      ${alert}
-      <form method="post" action="/admin/login">
-        <label>Username (opsional)
-          <input name="username" autocomplete="username" placeholder="admin">
-        </label>
-        <label>Password
-          <input type="password" name="password" autocomplete="current-password" placeholder="Password" required>
-        </label>
-        <button type="submit">Masuk</button>
-      </form>
-    </div>
+    </main>
   </body>
 </html>`;
 }
@@ -1941,282 +1848,102 @@ function renderAdminDashboardPage(options = {}) {
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <style nonce="${nonce}">
-      :root {
-        --bg: #f7f8fb;
-        --panel: #ffffff;
-        --text: #101828;
-        --muted: #5f6b7c;
-        --border: #d7dde8;
-        --control-border: #7d8695;
-        --placeholder: #667085;
-        --focus: #4f46e5;
-        --accent: #4f46e5;
-        --accent-soft: #eef2ff;
-        --ok: #05603a;
-        --ok-bg: #e7f6ee;
-        --warn: #93370d;
-        --warn-bg: #fdf3e3;
-        --bad: #912018;
-        --bad-bg: #fdeceb;
-        --shadow: 0 1px 2px rgba(16, 24, 40, 0.04), 0 8px 24px rgba(16, 24, 40, 0.05);
-      }
-      * { box-sizing: border-box; }
-      body {
-        margin: 0;
-        font-family: "Plus Jakarta Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
-        background: var(--bg);
-        color: var(--text);
-        font-size: 14px;
-        line-height: 1.5;
-      }
-      a { color: inherit; }
-      .num { font-variant-numeric: tabular-nums; }
-      .container { width: min(1180px, 100%); margin: 0 auto; }
-      header.container {
-        display: grid;
-        grid-template-columns: minmax(0, 1fr) auto;
-        gap: 16px;
-        align-items: end;
-        padding: 26px 22px 14px;
-      }
-      h1 { margin: 0; font-size: clamp(22px, 2.4vw, 28px); letter-spacing: -0.02em; }
-      .subtitle { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
-      .muted { color: var(--muted); font-size: 12px; }
-      .actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
-      .actions > * { min-width: 0; }
-      button, .ghost {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 6px;
-        min-height: 44px;
-        padding: 10px 14px;
-        border-radius: 9px;
-        border: 1px solid var(--control-border);
-        background: #fff;
-        color: var(--text);
-        font-family: inherit;
-        font-size: 13px;
-        font-weight: 600;
-        cursor: pointer;
-        text-decoration: none;
-      }
-      button.primary { background: var(--accent); border-color: #4338ca; color: #fff; }
-      button:hover, .ghost:hover { border-color: var(--focus); }
-      button.primary:hover { background: #4338ca; }
-      button:disabled { opacity: 0.6; cursor: default; }
-      button:focus-visible, .ghost:focus-visible, .phase-filter:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible {
-        outline: 3px solid var(--focus);
-        outline-offset: 2px;
-      }
-      main { padding: 0 22px 40px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
-      .panel {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        box-shadow: var(--shadow);
-        padding: 16px;
-      }
-      .panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 12px; min-width: 0; }
-      .panel-head > * { min-width: 0; }
-      h2 { margin: 0; font-size: 15px; letter-spacing: -0.01em; }
-
-      /* Blok status: satu fokus utama per layar. */
-      .status-panel { display: grid; gap: 14px; }
-      .status-panel[data-state="ok"] { border-left: 3px solid var(--ok); }
-      .status-panel[data-state="warn"] { border-left: 3px solid var(--warn); }
-      .status-panel[data-state="bad"] { border-left: 3px solid var(--bad); }
-      .status-main { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
-      .status-dot { width: 10px; height: 10px; border-radius: 999px; background: var(--muted); flex: none; }
-      [data-state="ok"] .status-dot { background: var(--ok); }
-      [data-state="warn"] .status-dot { background: var(--warn); }
-      [data-state="bad"] .status-dot { background: var(--bad); }
-      .status-title { font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
-      .status-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px; }
-      .fact { border: 1px solid var(--border); border-radius: 11px; padding: 10px 12px; background: #fbfcfe; }
-      .fact dt { color: var(--muted); font-size: 12px; font-weight: 600; }
-      .fact dd { margin: 4px 0 0; font-size: 15px; font-weight: 650; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
-
-      .chips { display: flex; gap: 6px; flex-wrap: wrap; }
-      .chip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--border); background: #fbfcfe; padding: 3px 10px; font-size: 12px; font-weight: 600; color: var(--muted); }
-      .chip[data-tone="ok"] { background: var(--ok-bg); color: var(--ok); border-color: #a9dfc4; }
-      .chip[data-tone="warn"] { background: var(--warn-bg); color: var(--warn); border-color: #f3cf9a; }
-      .chip[data-tone="bad"] { background: var(--bad-bg); color: var(--bad); border-color: #f5b5b0; }
-
-      .action-list { display: grid; gap: 8px; margin: 0; padding: 0; list-style: none; }
-      .action-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: center; border: 1px solid var(--border); border-radius: 12px; padding: 10px 12px; background: #fff; }
-      .action-name { font-weight: 650; overflow-wrap: anywhere; }
-      .action-detail { color: var(--muted); font-size: 12px; }
-
-      .today-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
-      .today-cell { border: 1px solid var(--border); border-radius: 12px; padding: 12px; background: #fbfcfe; }
-      .today-cell .k { color: var(--muted); font-size: 12px; font-weight: 600; }
-      .today-cell .v { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-top: 4px; font-variant-numeric: tabular-nums; }
-
-      .phase-line { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-      .phase-line .item { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--border); border-radius: 999px; padding: 5px 12px; background: #fbfcfe; font-size: 12px; font-weight: 600; }
-      .phase-line .item b { font-variant-numeric: tabular-nums; }
-
-      .tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; min-width: 0; }
-      .tools > * { min-width: 0; }
-      .search-input { border: 1px solid var(--control-border); border-radius: 9px; padding: 10px 12px; font-size: 13px; min-height: 44px; background: #fff; font-family: inherit; min-width: 0; flex: 1 1 220px; }
-      .search-input::placeholder { color: var(--placeholder); }
-      .phase-filters { display: flex; flex-wrap: wrap; gap: 6px; min-width: 0; max-width: 100%; }
-      .phase-filter { border: 1px solid var(--border); background: #fff; color: var(--text); border-radius: 999px; padding: 10px 13px; font-size: 12px; font-weight: 600; min-height: 44px; }
-      .phase-filter[aria-pressed="true"] { background: var(--text); border-color: var(--text); color: #fff; }
-
-      .table-wrap { width: 100%; max-width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 12px; background: #fff; }
-      table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 660px; }
-      caption { text-align: left; padding: 10px 12px; color: var(--muted); font-size: 12px; }
-      th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #eef1f6; white-space: nowrap; }
-      th { background: #f9fafb; color: var(--muted); font-weight: 650; }
-      tbody tr:hover { background: #f9fafb; }
-      td.name-cell { padding: 0; }
-      a.row-link { display: flex; align-items: center; min-height: 44px; padding: 10px 12px; text-decoration: none; font-weight: 650; color: var(--accent); }
-      a.row-link:hover { text-decoration: underline; }
-      .badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 3px 9px; font-size: 11px; font-weight: 650; border: 1px solid transparent; }
-      .b-ok { background: var(--ok-bg); color: var(--ok); border-color: #a9dfc4; }
-      .b-warn { background: var(--warn-bg); color: var(--warn); border-color: #f3cf9a; }
-      .b-info { background: var(--accent-soft); color: #3538cd; border-color: #c7d7fe; }
-      .b-mute { background: #f2f4f7; color: #475467; border-color: #d0d5dd; }
-
-      .log-list { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
-      .log-item { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; border-bottom: 1px solid #eef1f6; padding: 8px 2px; font-size: 13px; }
-      .log-item:last-child { border-bottom: none; }
-      .log-meta { color: var(--muted); font-size: 12px; }
-
-      .empty-line { margin: 0; color: var(--muted); font-size: 13px; }
-      .error-banner { display: grid; gap: 10px; border: 1px solid #f5b5b0; background: var(--bad-bg); color: var(--bad); border-radius: 12px; padding: 14px; font-size: 13px; }
-      .error-banner[hidden] { display: none; }
-      .error-banner p { margin: 0; }
-      .stale-note { margin: 0 0 10px; color: var(--bad); font-size: 12px; }
-      .stale-note[hidden] { display: none; }
-      .toast { position: fixed; bottom: 20px; right: 20px; background: var(--text); color: #fff; padding: 11px 14px; border-radius: 10px; font-size: 13px; opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
-      .toast.show { opacity: 1; transform: translateY(0); }
-      [hidden] { display: none !important; }
-
-      @media (max-width: 720px) {
-        header.container { grid-template-columns: minmax(0, 1fr); align-items: stretch; padding: 20px 16px 12px; }
-        main { padding: 0 16px 32px; }
-        .actions, .tools { width: 100%; }
-        .actions > *, .tools > * { flex: 1 1 auto; }
-        .phase-filters { width: 100%; max-width: 100%; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
-        .action-item { grid-template-columns: minmax(0, 1fr); }
-        .action-item button { width: 100%; }
-        .today-cell .v { font-size: 20px; }
-        .toast { left: 16px; right: 16px; bottom: 16px; }
-      }
-      @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+    <style nonce="${nonce}">${ADMIN_CSS}
+      .kv.kv-6 > div { border-top: none; }
+      .modes { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 12px; }
     </style>
   </head>
   <body>
-    <header class="container">
-      <div>
-        <h1>RemindCare Admin</h1>
-        <p class="subtitle">Kokpit pengingat harian. Bagian atas menjawab apakah bot sehat, bagian tengah apa yang perlu dikerjakan.</p>
-        <p class="muted">Data terakhir dimuat: <span id="last-updated">belum dimuat</span></p>
+    <header class="topbar">
+      <div class="brand">
+        ${icon("pulse")}
+        <h1>RemindCare</h1>
+        <span class="tag">admin pengingat</span>
       </div>
-      <div class="actions">
-        <button type="button" id="refresh-btn" class="primary">Muat ulang data</button>
-        <a class="ghost" href="/admin/settings">Kendali dan pengaturan</a>
-        <details class="export-menu">
-          <summary class="ghost">Ekspor CSV</summary>
-          <div class="panel" style="margin-top:8px">
-            <p class="muted">Berkas memuat nomor WhatsApp dan data kesehatan. Simpan di tempat aman.</p>
-            <a class="ghost" href="/admin/api/export/users.csv" download>Data user</a>
-            <a class="ghost" href="/admin/api/export/reminder_logs.csv" download>Catatan pengingat</a>
-            <a class="ghost" href="/admin/api/export/postpartum_logs.csv" download>Catatan nifas</a>
+      <div class="row">
+        <span class="muted num" id="last-updated">memuat</span>
+        <button type="button" id="refresh-btn">${icon("refresh")}Muat ulang</button>
+        <a class="btn" href="/admin/settings">${icon("sliders")}Pengaturan</a>
+        <details class="pop">
+          <summary class="btn">${icon("download")}Ekspor</summary>
+          <div class="panel">
+            <a href="/admin/api/export/users.csv" download>${icon("download")}Data user</a>
+            <a href="/admin/api/export/reminder_logs.csv" download>${icon("download")}Catatan pengingat</a>
+            <a href="/admin/api/export/postpartum_logs.csv" download>${icon("download")}Catatan nifas</a>
           </div>
         </details>
         <form method="post" action="/admin/logout">
           <input type="hidden" name="_csrf" value="${csrf}">
-          <button type="submit" class="ghost">Keluar</button>
+          <button type="submit" class="btn-icon" aria-label="Keluar dari panel admin" title="Keluar">${icon("logout")}</button>
         </form>
       </div>
     </header>
 
-    <main class="container">
-      <div class="error-banner" id="error-banner" role="alert" hidden>
+    <div class="wrap">
+      <div class="banner" id="error-banner" role="alert" hidden>
+        ${icon("alert")}
         <p id="error-text"></p>
-        <div class="actions">
-          <button type="button" class="ghost" id="error-retry">Coba muat ulang</button>
-        </div>
+        <button type="button" id="error-retry">${icon("rotate")}Coba lagi</button>
       </div>
 
-      <section class="panel status-panel" id="status-panel" data-state="warn" aria-labelledby="status-title">
-        <div class="status-main">
-          <span class="status-dot" aria-hidden="true"></span>
-          <span class="status-title" id="status-title">Memeriksa status bot</span>
-          <span class="muted" id="status-sub"></span>
+      <section class="panel" id="status-panel" aria-labelledby="status-title">
+        <div class="panel-head">
+          <h2 id="status-title">${icon("plug")}Status bot</h2>
+          <span class="badge" id="status-badge">memuat</span>
         </div>
-        <dl class="status-facts">
-          <div class="fact"><dt>Sesi WhatsApp</dt><dd id="fact-client">memuat</dd></div>
-          <div class="fact"><dt>Siap sejak</dt><dd id="fact-ready">memuat</dd></div>
-          <div class="fact"><dt>Jendela kirim</dt><dd id="fact-window">memuat</dd></div>
-          <div class="fact"><dt>Kuota hari ini</dt><dd id="fact-quota">memuat</dd></div>
-          <div class="fact"><dt>Pesan keluar (sesi ini)</dt><dd id="fact-sent">memuat</dd></div>
-          <div class="fact"><dt>Gagal kirim (sesi ini)</dt><dd id="fact-failed">memuat</dd></div>
+        <dl class="kv kv-6">
+          <div><dt>Sesi WhatsApp</dt><dd id="fact-client">-</dd></div>
+          <div><dt>Siap sejak</dt><dd id="fact-ready">-</dd></div>
+          <div><dt>Jendela kirim</dt><dd id="fact-window">-</dd></div>
+          <div><dt>Kuota hari ini</dt><dd id="fact-quota" class="num">-</dd></div>
+          <div><dt>Terkirim</dt><dd id="fact-sent" class="num">-</dd></div>
+          <div><dt>Gagal</dt><dd id="fact-failed" class="num">-</dd></div>
         </dl>
-        <div class="chips" id="status-chips"></div>
-        <p class="stale-note" id="status-note" role="status" aria-live="polite" hidden></p>
+        <div class="modes" id="status-chips"></div>
+        <p class="note" id="status-note" role="status" aria-live="polite" style="padding:0 12px 12px;margin:0" hidden></p>
       </section>
 
-      <section class="panel" id="action-section" aria-labelledby="action-title">
+      <section class="panel" aria-labelledby="action-title">
         <div class="panel-head">
-          <h2 id="action-title">Perlu tindakan</h2>
-          <p class="muted" id="action-count" role="status" aria-live="polite">memuat</p>
+          <h2 id="action-title">${icon("alert")}Perlu tindakan</h2>
+          <span class="badge" id="action-count">memuat</span>
         </div>
-        <ul class="action-list" id="action-list">
-          <li class="empty-line">Memuat daftar tindakan.</li>
+        <ul class="tasks" id="action-list">
+          <li class="empty">Memuat.</li>
         </ul>
       </section>
 
       <section class="panel" aria-labelledby="today-title">
         <div class="panel-head">
-          <h2 id="today-title">Pengingat hari ini</h2>
-          <p class="muted" id="today-date"></p>
+          <h2 id="today-title">${icon("clock")}Hari ini</h2>
+          <span class="muted" id="today-date"></span>
         </div>
-        <div class="today-row">
-          <div class="today-cell"><div class="k">Menunggu jawaban</div><div class="v" id="today-waiting">-</div></div>
-          <div class="today-cell"><div class="k">Dijawab sudah</div><div class="v" id="today-sudah">-</div></div>
-          <div class="today-cell"><div class="k">Dijawab belum</div><div class="v" id="today-belum">-</div></div>
-          <div class="today-cell"><div class="k">Tidak akan terkirim</div><div class="v" id="today-blocked">-</div></div>
-        </div>
-      </section>
-
-      <section class="panel" aria-labelledby="phase-title">
-        <div class="panel-head">
-          <h2 id="phase-title">Peserta per fase</h2>
-          <p class="muted">Fase ditentukan dari data pendataan, persalinan, dan nifas.</p>
-        </div>
-        <div class="phase-line" id="phase-line">
-          <span class="item">Onboarding <b id="phase-onboarding">-</b></span>
-          <span class="item">Kehamilan <b id="phase-kehamilan">-</b></span>
-          <span class="item">Persalinan <b id="phase-persalinan">-</b></span>
-          <span class="item">Pasca kehamilan <b id="phase-pasca">-</b></span>
+        <div class="metrics">
+          <div class="metric"><div class="k">Menunggu jawaban</div><div class="v" id="today-waiting">-</div></div>
+          <div class="metric"><div class="k">Dijawab sudah</div><div class="v" id="today-sudah">-</div></div>
+          <div class="metric"><div class="k">Dijawab belum</div><div class="v" id="today-belum">-</div></div>
+          <div class="metric"><div class="k">Tidak terkirim</div><div class="v" id="today-blocked">-</div></div>
         </div>
       </section>
 
       <section class="panel" aria-labelledby="users-title">
         <div class="panel-head">
-          <h2 id="users-title">Daftar user</h2>
-          <div class="tools">
-            <input id="users-search" class="search-input" type="search" autocomplete="off" aria-label="Cari user berdasarkan nama atau nomor WhatsApp" placeholder="Cari nama atau nomor WA">
-            <div class="phase-filters" role="group" aria-label="Filter fase">
+          <h2 id="users-title">${icon("users")}User</h2>
+          <div class="row">
+            <span class="search-wrap">${icon("search")}<input id="users-search" class="search" type="search" autocomplete="off" aria-label="Cari nama atau nomor WhatsApp" placeholder="Cari nama atau nomor"></span>
+            <div class="seg" role="group" aria-label="Filter fase">
               <button type="button" class="phase-filter" data-phase-filter="all" aria-pressed="true">Semua</button>
               <button type="button" class="phase-filter" data-phase-filter="onboarding" aria-pressed="false">Onboarding</button>
               <button type="button" class="phase-filter" data-phase-filter="kehamilan" aria-pressed="false">Kehamilan</button>
               <button type="button" class="phase-filter" data-phase-filter="persalinan" aria-pressed="false">Persalinan</button>
-              <button type="button" class="phase-filter" data-phase-filter="pasca_kehamilan" aria-pressed="false">Pasca kehamilan</button>
+              <button type="button" class="phase-filter" data-phase-filter="pasca_kehamilan" aria-pressed="false">Nifas</button>
             </div>
           </div>
         </div>
-        <p class="muted" id="users-count" role="status" aria-live="polite">memuat</p>
-        <p class="stale-note" id="users-note" hidden></p>
+        <p class="note" id="users-note" hidden style="padding:10px 12px 0"></p>
         <div class="table-wrap">
           <table>
-            <caption>Nama user adalah tautan ke halaman detail, bisa dibuka dengan Enter atau Space.</caption>
+            <caption id="users-count">memuat</caption>
             <thead>
               <tr>
                 <th scope="col">Nama</th>
@@ -2228,7 +1955,7 @@ function renderAdminDashboardPage(options = {}) {
               </tr>
             </thead>
             <tbody id="users-body" aria-busy="true">
-              <tr><td colspan="6" class="muted">Memuat daftar user.</td></tr>
+              <tr><td colspan="6" class="muted">Memuat.</td></tr>
             </tbody>
           </table>
         </div>
@@ -2236,304 +1963,245 @@ function renderAdminDashboardPage(options = {}) {
 
       <section class="panel" aria-labelledby="logs-title">
         <div class="panel-head">
-          <h2 id="logs-title">Catatan pengingat terbaru</h2>
-          <button type="button" class="ghost" id="logs-toggle">Tampilkan 50</button>
+          <h2 id="logs-title">${icon("list")}Catatan pengingat</h2>
+          <button type="button" id="logs-toggle">${icon("list")}Tampilkan 50</button>
         </div>
-        <p class="stale-note" id="logs-note" hidden></p>
-        <ul class="log-list" id="logs-body" aria-busy="true">
-          <li class="empty-line">Memuat catatan pengingat.</li>
+        <p class="note" id="logs-note" hidden style="padding:10px 12px 0"></p>
+        <ul class="feed" id="logs-body" aria-busy="true">
+          <li class="empty">Memuat.</li>
         </ul>
       </section>
-    </main>
+    </div>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
     <script nonce="${nonce}">
       const CSRF_TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
-      function csrfHeaders(extra) {
-        return Object.assign({ 'X-CSRF-Token': CSRF_TOKEN }, extra || {});
-      }
+      function csrfHeaders(extra) { return Object.assign({ 'X-CSRF-Token': CSRF_TOKEN }, extra || {}); }
+      const ICON_LINK = '${icon("link", 14)}';
+      const ICON_CHECK_BUTTON = '${icon("check", 14)}';
+      const ICON_SHIELD_BUTTON = '${icon("shield", 14)}';
+      const ICON_ROTATE_BUTTON = '${icon("rotate", 14)}';
       const toast = document.getElementById('toast');
-      function showToast(message) {
-        toast.textContent = message;
+      function showToast(text) {
+        toast.textContent = text;
         toast.classList.add('show');
         clearTimeout(window.__toastTimer);
-        window.__toastTimer = setTimeout(() => toast.classList.remove('show'), 2500);
+        window.__toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
       }
-      function fmt(value) {
-        return value === null || value === undefined || value === '' ? '-' : value;
+      function fmt(v) { return v === null || v === undefined || v === '' ? '-' : v; }
+      function fmtDt(v) {
+        if (!v) return '-';
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
       }
-      function fmtDateTime(value) {
-        if (!value) return '-';
-        const parsed = new Date(value);
-        if (Number.isNaN(parsed.getTime())) return String(value);
-        return parsed.toLocaleString('id-ID');
-      }
+      function clampPct(v) { return Number.isFinite(v) ? Math.max(0, Math.min(100, Math.round(v))) : 0; }
       function classifyPhase(user) {
-        const hasPostpartum = Number(user.postpartum_total || 0) > 0 || !!user.delivery_date_iso;
-        if (hasPostpartum) return 'pasca_kehamilan';
-        const hasLaborSignals =
-          Number(user.delivery_data_step || 0) > 0 ||
-          !!user.delivery_poll_stage ||
-          !!user.delivery_hpl_poll_sent_date ||
-          !!user.delivery_hpl3_poll_sent_date ||
-          user.delivery_hpl_response === 'Sudah' ||
-          user.delivery_hpl3_response === 'Sudah';
-        if (hasLaborSignals) return 'persalinan';
+        if (Number(user.postpartum_total || 0) > 0 || user.delivery_date_iso) return 'pasca_kehamilan';
+        const labor = Number(user.delivery_data_step || 0) > 0 || !!user.delivery_poll_stage || !!user.delivery_hpl_poll_sent_date ||
+          !!user.delivery_hpl3_poll_sent_date || user.delivery_hpl_response === 'Sudah' || user.delivery_hpl3_response === 'Sudah';
+        if (labor) return 'persalinan';
         if (user.status === 'onboarding' || !user.hpht_iso) return 'onboarding';
         return 'kehamilan';
       }
-      function phaseLabel(phase) {
-        if (phase === 'kehamilan') return 'Kehamilan';
-        if (phase === 'persalinan') return 'Persalinan';
-        if (phase === 'pasca_kehamilan') return 'Pasca kehamilan';
-        return 'Onboarding';
+      const PHASE_LABEL = { onboarding: 'Onboarding', kehamilan: 'Kehamilan', persalinan: 'Persalinan', pasca_kehamilan: 'Nifas' };
+      const PHASE_TONE = { onboarding: 'badge', kehamilan: 'badge badge-ok', persalinan: 'badge badge-warn', pasca_kehamilan: 'badge badge-accent' };
+      const STATUS_LABEL = { active: 'Aktif', paused: 'Dijeda', completed: 'Selesai', onboarding: 'Pendataan' };
+      const STATUS_TONE = { active: 'badge badge-ok', paused: 'badge badge-warn', completed: 'badge', onboarding: 'badge badge-accent' };
+      function badge(tone, text) {
+        const span = document.createElement('span');
+        span.className = tone;
+        span.textContent = text;
+        return span;
       }
-      function statusLabel(status) {
-        if (status === 'active') return 'Aktif';
-        if (status === 'paused') return 'Dijeda';
-        if (status === 'completed') return 'Selesai';
-        if (status === 'onboarding') return 'Pendataan';
-        return fmt(status);
-      }
-      function statusTone(status) {
-        if (status === 'active') return 'b-ok';
-        if (status === 'paused') return 'b-warn';
-        if (status === 'completed') return 'b-mute';
-        return 'b-info';
-      }
-      function phaseTone(phase) {
-        if (phase === 'kehamilan') return 'b-ok';
-        if (phase === 'persalinan') return 'b-warn';
-        if (phase === 'pasca_kehamilan') return 'b-info';
-        return 'b-mute';
-      }
-      function clampPercent(value) {
-        if (!Number.isFinite(value)) return 0;
-        return Math.max(0, Math.min(100, Math.round(value)));
-      }
-      function computeProgress(user) {
-        const totalLogs = Number(user.total_logs || 0);
-        const totalAnswered = Number(user.total_answered || 0);
-        const fePct = totalLogs > 0 ? clampPercent((totalAnswered * 100) / totalLogs) : 0;
+      function setText(id, text) { const n = document.getElementById(id); if (n) n.textContent = text; }
+      function progress(user) {
+        const logs = Number(user.total_logs || 0);
+        const answered = Number(user.total_answered || 0);
         const ppTotal = Number(user.postpartum_total || 0);
-        const ppSudah = Number(user.postpartum_sudah || 0);
-        const ppPct = ppTotal > 0 ? clampPercent((ppSudah * 100) / ppTotal) : 0;
-        const deliveryDone = !!user.delivery_data_completed_at || !!user.delivery_date_iso;
-        const deliveryState = deliveryDone ? 'Selesai'
-          : (Number(user.delivery_data_step || 0) > 0 || user.delivery_hpl_response === 'Sudah' || user.delivery_hpl3_response === 'Sudah') ? 'Proses' : 'Belum';
-        return { fePct, ppPct, deliveryState, started: totalLogs > 0 || ppTotal > 0 || deliveryDone };
+        const done = !!user.delivery_data_completed_at || !!user.delivery_date_iso;
+        return {
+          fe: logs > 0 ? clampPct((answered * 100) / logs) : 0,
+          pp: ppTotal > 0 ? clampPct((Number(user.postpartum_sudah || 0) * 100) / ppTotal) : 0,
+          labor: done ? 'Selesai' : (Number(user.delivery_data_step || 0) > 0 ? 'Proses' : 'Belum'),
+          started: logs > 0 || ppTotal > 0 || done,
+        };
       }
       async function fetchJson(url, options) {
-        const res = await fetch(url, Object.assign({ headers: csrfHeaders({ 'Accept': 'application/json' }) }, options || {}));
-        if (res.status === 401) {
-          window.location.href = '/admin/login?expired=1';
-          throw new Error('Sesi berakhir. Silakan masuk lagi.');
-        }
-        if (!res.ok) throw new Error('Permintaan gagal dengan kode ' + res.status);
+        const res = await fetch(url, Object.assign({ headers: csrfHeaders({ Accept: 'application/json' }) }, options || {}));
+        if (res.status === 401) { window.location.href = '/admin/login?expired=1'; throw new Error('Sesi berakhir'); }
+        if (!res.ok) throw new Error('kode ' + res.status);
         return res.json();
-      }
-      function setText(id, value) {
-        const node = document.getElementById(id);
-        if (node) node.textContent = value;
       }
       let healthCache = null;
       let summaryCache = null;
       let usersCache = [];
       let logsCache = [];
-      let logsExpanded = false;
-      let activePhaseFilter = 'all';
-      let searchKeyword = '';
+      let logsOpen = false;
+      let phaseFilter = 'all';
+      let keyword = '';
 
       function renderStatus() {
-        const panel = document.getElementById('status-panel');
         const health = healthCache || {};
         const guard = health.guard || {};
         const client = health.client || {};
-        const config = guard.config || {};
+        const cfg = guard.config || {};
         const runtime = health.runtime || {};
         const ready = !!client.ready;
         const paused = !!guard.paused;
-        let state = 'ok';
-        let title = 'Bot siap dan pengiriman normal';
-        if (!ready) {
-          state = 'bad';
-          title = 'Sesi WhatsApp tidak tersambung';
-        } else if (paused) {
-          state = 'bad';
-          title = 'Pengiriman sedang dijeda';
-        } else if (runtime.maintenance_mode || runtime.dry_run) {
-          state = 'warn';
-          title = runtime.maintenance_mode ? 'Mode perawatan aktif' : 'Mode simulasi aktif';
-        } else if (Number(guard.failures || 0) > 0) {
-          state = 'warn';
-          title = 'Ada kegagalan kirim pada sesi ini';
-        }
-        panel.dataset.state = state;
-        setText('status-title', title);
-        setText('status-sub', ready ? 'Sesi aktif, pengingat terjadwal berjalan di jendela kirim.' : 'Tautkan ulang WhatsApp sebelum pengingat diharapkan keluar.');
+        let tone = 'badge badge-ok';
+        let text = 'Siap';
+        if (!ready) { tone = 'badge badge-bad'; text = 'Sesi putus'; }
+        else if (paused) { tone = 'badge badge-bad'; text = 'Dijeda'; }
+        else if (runtime.maintenance_mode) { tone = 'badge badge-bad'; text = 'Mode perawatan'; }
+        else if (runtime.dry_run) { tone = 'badge badge-warn'; text = 'Mode simulasi'; }
+        else if (Number(guard.failures || 0) > 0) { tone = 'badge badge-warn'; text = 'Ada gagal kirim'; }
+        const badgeNode = document.getElementById('status-badge');
+        badgeNode.className = tone;
+        badgeNode.textContent = text;
         setText('fact-client', ready ? 'Tersambung' : 'Tidak tersambung');
-        setText('fact-ready', client.lastReadyAt ? fmtDateTime(client.lastReadyAt) : 'belum pernah');
-        const win = config.windowStartHour !== undefined ? (config.windowStartHour + ':00 sampai ' + config.windowEndHour + ':' + String(config.windowEndMinute || 0).padStart(2, '0')) : '-';
-        setText('fact-window', health.guard && health.guard.withinSendWindow === false ? win + ' (di luar jendela)' : win);
-        setText('fact-quota', (guard.lastDay || 0) + ' dari ' + (guard.dailyCap || '-'));
+        setText('fact-ready', client.lastReadyAt ? fmtDt(client.lastReadyAt) : 'belum pernah');
+        const win = cfg.windowStartHour === undefined ? '-' : cfg.windowStartHour + ':00 sampai ' + cfg.windowEndHour + ':' + String(cfg.windowEndMinute || 0).padStart(2, '0');
+        setText('fact-window', guard.withinSendWindow === false ? win + ', di luar jendela' : win);
+        setText('fact-quota', (guard.lastDay || 0) + ' / ' + (guard.dailyCap === undefined ? '-' : guard.dailyCap));
         setText('fact-sent', String(guard.sent || 0));
         setText('fact-failed', String(guard.failures || 0));
         const chips = document.getElementById('status-chips');
         chips.innerHTML = '';
-        const chipRows = [
-          [runtime.maintenance_mode ? 'Mode perawatan aktif' : 'Mode perawatan mati', runtime.maintenance_mode ? 'warn' : 'ok'],
-          [runtime.dry_run ? 'Mode simulasi aktif' : 'Pengiriman nyata', runtime.dry_run ? 'warn' : 'ok'],
-          [runtime.enforce_allowlist ? 'Allowlist aktif' : 'Allowlist mati', runtime.enforce_allowlist ? 'ok' : 'warn'],
+        const mods = [
+          [runtime.maintenance_mode ? 'Perawatan aktif' : 'Perawatan mati', runtime.maintenance_mode ? 'badge badge-bad' : 'badge'],
+          [runtime.dry_run ? 'Simulasi aktif' : 'Kirim nyata', runtime.dry_run ? 'badge badge-warn' : 'badge badge-ok'],
+          [runtime.enforce_allowlist ? 'Allowlist aktif' : 'Allowlist mati', runtime.enforce_allowlist ? 'badge' : 'badge badge-warn'],
         ];
-        if (health.alert) {
-          chipRows.push(['Alarm terakhir: ' + health.alert.kind, 'bad']);
-        }
-        for (const [text, tone] of chipRows) {
-          const span = document.createElement('span');
-          span.className = 'chip';
-          span.dataset.tone = tone;
-          span.textContent = text;
-          chips.appendChild(span);
-        }
+        for (const [label, tone2] of mods) chips.appendChild(badge(tone2, label));
         const note = document.getElementById('status-note');
         if (health.alert) {
           note.hidden = false;
-          note.textContent = 'Alarm ' + health.alert.kind + ' pada ' + fmtDateTime(health.alert.at) + ': ' + (health.alert.detail || '');
-        } else if (client.lastDisconnectReason) {
-          note.hidden = false;
-          note.textContent = 'Terputus terakhir: ' + client.lastDisconnectReason + ' (' + fmtDateTime(client.lastDisconnectedAt) + ')';
+          note.textContent = 'Alarm ' + health.alert.kind + ' ' + fmtDt(health.alert.at) + ': ' + (health.alert.detail || '');
         } else {
           note.hidden = true;
-          note.textContent = '';
         }
       }
 
-      const ACTION_LABELS = {
-        resume: 'Aktifkan pengingat',
-        unblock: 'Buka blokir',
-        clear_send_failures: 'Reset penghitung gagal',
+      const ACTIONS = {
+        resume: { label: 'Aktifkan', cls: 'btn-primary', icon: 'check' },
+        unblock: { label: 'Buka blokir', cls: 'btn', icon: 'shield' },
+        clear_send_failures: { label: 'Reset', cls: 'btn', icon: 'rotate' },
       };
-      function actionFor(reasonCode) {
-        if (reasonCode === 'blocked') return 'unblock';
-        if (reasonCode === 'send_failure') return 'clear_send_failures';
+      function pickAction(reason) {
+        if (reason === 'blocked') return 'unblock';
+        if (reason === 'send_failure') return 'clear_send_failures';
         return 'resume';
       }
-      async function runUserAction(waId, action, button) {
-        const original = button.textContent;
+      async function runAction(waId, action, button) {
         button.disabled = true;
-        button.textContent = 'Memproses...';
         try {
-          const result = await fetchJson('/admin/api/users/' + encodeURIComponent(waId) + '/actions', {
+          const res = await fetchJson('/admin/api/users/' + encodeURIComponent(waId) + '/actions', {
             method: 'POST',
             headers: csrfHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ action: action }),
+            body: JSON.stringify({ action }),
           });
-          if (!result.ok) throw new Error(result.error || 'gagal');
-          showToast('Selesai: ' + (ACTION_LABELS[action] || action));
+          if (!res.ok) throw new Error(res.error || 'gagal');
+          showToast('Selesai: ' + (ACTIONS[action] || {}).label);
           await loadAll(false);
         } catch (err) {
           showToast('Gagal: ' + err.message);
-        } finally {
           button.disabled = false;
-          button.textContent = original;
         }
       }
       function renderActions() {
         const list = document.getElementById('action-list');
-        const count = document.getElementById('action-count');
         const items = (summaryCache && summaryCache.needsAction) || [];
         list.innerHTML = '';
+        document.getElementById('action-count').textContent = items.length ? items.length + ' user' : 'tidak ada';
         if (!items.length) {
-          count.textContent = 'tidak ada';
           const li = document.createElement('li');
-          li.className = 'empty-line';
-          li.textContent = 'Tidak ada yang perlu dikerjakan. Semua user yang punya jam pengingat sedang berjalan.';
+          li.className = 'empty';
+          li.textContent = 'Tidak ada yang perlu dikerjakan.';
           list.appendChild(li);
           return;
         }
-        count.textContent = items.length + ' user';
         for (const item of items) {
+          const action = ACTIONS[pickAction(item.reason)] ? pickAction(item.reason) : 'resume';
+          const meta = ACTIONS[action];
           const li = document.createElement('li');
-          li.className = 'action-item';
+          li.className = 'task';
           const left = document.createElement('div');
+          left.style.minWidth = '0';
           const name = document.createElement('div');
-          name.className = 'action-name';
+          name.className = 'task-name';
           name.textContent = item.name || item.wa_id;
-          const detail = document.createElement('div');
-          detail.className = 'action-detail';
-          detail.textContent = item.detail;
+          const why = document.createElement('div');
+          why.className = 'task-why';
+          why.textContent = item.detail;
           left.appendChild(name);
-          left.appendChild(detail);
-          const action = actionFor(item.reason);
+          left.appendChild(why);
+          const right = document.createElement('div');
+          right.className = 'row';
+          const link = document.createElement('a');
+          link.className = 'btn btn-icon';
+          link.href = '/admin/users/' + encodeURIComponent(item.wa_id);
+          link.setAttribute('aria-label', 'Buka detail ' + (item.name || item.wa_id));
+          link.title = 'Detail';
+          link.innerHTML = ICON_LINK;
           const btn = document.createElement('button');
           btn.type = 'button';
-          btn.className = action === 'resume' ? 'primary' : 'ghost';
-          btn.textContent = ACTION_LABELS[action];
-          btn.addEventListener('click', () => runUserAction(item.wa_id, action, btn));
-          const wrap = document.createElement('div');
-          wrap.className = 'actions';
-          const link = document.createElement('a');
-          link.className = 'ghost';
-          link.href = '/admin/users/' + encodeURIComponent(item.wa_id);
-          link.textContent = 'Detail';
-          wrap.appendChild(link);
-          wrap.appendChild(btn);
+          btn.className = meta.cls;
+          btn.innerHTML = meta.icon === 'check' ? ICON_CHECK_BUTTON : (meta.icon === 'shield' ? ICON_SHIELD_BUTTON : ICON_ROTATE_BUTTON);
+          btn.appendChild(document.createTextNode(meta.label));
+          btn.addEventListener('click', () => runAction(item.wa_id, action, btn));
+          right.appendChild(link);
+          right.appendChild(btn);
           li.appendChild(left);
-          li.appendChild(wrap);
+          li.appendChild(right);
           list.appendChild(li);
         }
       }
       function renderToday() {
         const summary = summaryCache || {};
-        const reminders = summary.reminders || {};
+        const rem = summary.reminders || {};
         const users = summary.users || {};
-        setText('today-date', reminders.date ? 'Tanggal ' + reminders.date : '');
-        setText('today-waiting', fmt(reminders.todayWaiting));
-        setText('today-sudah', fmt(reminders.todaySudah));
-        setText('today-belum', fmt(reminders.todayBelum));
-        setText('today-blocked', fmt(users.total - users.runnable));
+        setText('today-date', rem.date || '');
+        setText('today-waiting', fmt(rem.todayWaiting));
+        setText('today-sudah', fmt(rem.todaySudah));
+        setText('today-belum', fmt(rem.todayBelum));
+        setText('today-blocked', fmt(users.total === undefined ? '-' : users.total - (users.runnable || 0)));
       }
-      function renderPhases() {
+      function phaseCounts() {
         const counts = { onboarding: 0, kehamilan: 0, persalinan: 0, pasca_kehamilan: 0 };
         for (const user of usersCache) counts[classifyPhase(user)] += 1;
-        setText('phase-onboarding', counts.onboarding);
-        setText('phase-kehamilan', counts.kehamilan);
-        setText('phase-persalinan', counts.persalinan);
-        setText('phase-pasca', counts.pasca_kehamilan);
-        const labels = { all: 'Semua', onboarding: 'Onboarding', kehamilan: 'Kehamilan', persalinan: 'Persalinan', pasca_kehamilan: 'Pasca kehamilan' };
-        const filterCounts = Object.assign({ all: usersCache.length }, counts);
+        return counts;
+      }
+      function renderUsers() {
+        const tbody = document.getElementById('users-body');
+        const counts = phaseCounts();
+        const filtered = usersCache.filter((user) => {
+          if (phaseFilter !== 'all' && classifyPhase(user) !== phaseFilter) return false;
+          if (!keyword) return true;
+          return String(user.wa_id || '').toLowerCase().includes(keyword) || String(user.name || '').toLowerCase().includes(keyword);
+        });
         for (const btn of document.querySelectorAll('.phase-filter')) {
           const key = btn.getAttribute('data-phase-filter');
-          btn.textContent = labels[key] + ' (' + (filterCounts[key] || 0) + ')';
+          btn.setAttribute('aria-pressed', key === phaseFilter ? 'true' : 'false');
         }
-      }
-      function renderUsersTable() {
-        const tbody = document.getElementById('users-body');
-        const filtered = usersCache.filter((user) => {
-          if (activePhaseFilter !== 'all' && classifyPhase(user) !== activePhaseFilter) return false;
-          if (!searchKeyword) return true;
-          return [user.wa_id, user.name].map((x) => String(x || '').toLowerCase()).join(' ').includes(searchKeyword);
-        });
+        document.getElementById('users-count').textContent =
+          filtered.length + ' dari ' + usersCache.length + ' user · ' +
+          Object.keys(counts).map((k) => PHASE_LABEL[k] + ' ' + counts[k]).join(' · ');
         tbody.innerHTML = '';
-        const countNode = document.getElementById('users-count');
-        if (countNode) countNode.textContent = 'Menampilkan ' + filtered.length + ' dari ' + usersCache.length + ' user.';
         if (!filtered.length) {
-          const row = document.createElement('tr');
-          const cell = document.createElement('td');
-          cell.colSpan = 6;
-          cell.className = 'muted';
-          cell.textContent = usersCache.length
-            ? 'Tidak ada user yang cocok. Longgarkan filter atau kosongkan pencarian.'
-            : 'Belum ada user. User muncul setelah percakapan WhatsApp pertama selesai didata.';
-          row.appendChild(cell);
-          tbody.appendChild(row);
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 6;
+          td.className = 'muted';
+          td.textContent = usersCache.length ? 'Tidak ada yang cocok dengan filter.' : 'Belum ada user.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
           return;
         }
         for (const user of filtered) {
-          const tr = document.createElement('tr');
           const phase = classifyPhase(user);
-          const progress = computeProgress(user);
+          const p = progress(user);
+          const tr = document.createElement('tr');
           const nameCell = document.createElement('td');
           nameCell.className = 'name-cell';
           const link = document.createElement('a');
@@ -2542,40 +2210,29 @@ function renderAdminDashboardPage(options = {}) {
           link.textContent = fmt(user.name);
           nameCell.appendChild(link);
           tr.appendChild(nameCell);
-
           const phaseCell = document.createElement('td');
-          const phaseBadge = document.createElement('span');
-          phaseBadge.className = 'badge ' + phaseTone(phase);
-          phaseBadge.textContent = phaseLabel(phase);
-          phaseCell.appendChild(phaseBadge);
+          phaseCell.appendChild(badge(PHASE_TONE[phase], PHASE_LABEL[phase]));
           tr.appendChild(phaseCell);
-
           const statusCell = document.createElement('td');
-          const statusBadge = document.createElement('span');
-          statusBadge.className = 'badge ' + statusTone(user.status);
-          statusBadge.textContent = statusLabel(user.status);
-          statusCell.appendChild(statusBadge);
+          statusCell.appendChild(badge(STATUS_TONE[user.status] || 'badge', STATUS_LABEL[user.status] || fmt(user.status)));
           tr.appendChild(statusCell);
-
           const timeCell = document.createElement('td');
           timeCell.className = 'num';
           timeCell.textContent = fmt(user.reminder_time);
           tr.appendChild(timeCell);
-
           const answerCell = document.createElement('td');
-          answerCell.textContent = user.last_response ? user.last_response + ' (' + fmt(user.last_response_date) + ')' : 'belum ada';
+          answerCell.textContent = user.last_response ? user.last_response + ' ' + fmt(user.last_response_date) : 'belum ada';
           tr.appendChild(answerCell);
-
           const progressCell = document.createElement('td');
-          if (!progress.started) {
+          if (!p.started) {
             progressCell.className = 'muted';
             progressCell.textContent = 'belum mulai';
           } else {
-            const bits = ['FE ' + progress.fePct + '%'];
-            if (progress.deliveryState !== 'Belum') bits.push('Persalinan ' + progress.deliveryState);
-            if (progress.ppPct > 0 || progress.deliveryState === 'Selesai') bits.push('KF/KN ' + progress.ppPct + '%');
+            const bits = ['FE ' + p.fe + '%'];
+            if (p.labor !== 'Belum') bits.push('Persalinan ' + p.labor);
+            if (p.pp > 0 || p.labor === 'Selesai') bits.push('KF/KN ' + p.pp + '%');
             progressCell.className = 'num';
-            progressCell.textContent = bits.join(', ');
+            progressCell.textContent = bits.join(' · ');
           }
           tr.appendChild(progressCell);
           tbody.appendChild(tr);
@@ -2583,120 +2240,98 @@ function renderAdminDashboardPage(options = {}) {
       }
       function renderLogs() {
         const list = document.getElementById('logs-body');
-        const limit = logsExpanded ? 50 : 10;
+        const limit = logsOpen ? 50 : 10;
         list.innerHTML = '';
         if (!logsCache.length) {
           const li = document.createElement('li');
-          li.className = 'empty-line';
-          li.textContent = 'Belum ada catatan. Catatan muncul setelah pengingat pertama terkirim dan dijawab user.';
+          li.className = 'empty';
+          li.textContent = 'Belum ada catatan pengingat.';
           list.appendChild(li);
           return;
         }
         for (const log of logsCache.slice(0, limit)) {
           const li = document.createElement('li');
-          li.className = 'log-item';
           const left = document.createElement('div');
+          left.style.minWidth = '0';
           const who = document.createElement('div');
-          who.textContent = fmt(log.name) + ' menjawab ' + String(fmt(log.response)).toLowerCase();
-          const meta = document.createElement('div');
-          meta.className = 'log-meta';
-          meta.textContent = 'Pengingat ' + fmt(log.reminder_date) + ', dicatat ' + fmtDateTime(log.created_at);
+          who.textContent = fmt(log.name) + ' · ' + String(fmt(log.response)).toLowerCase();
+          const when = document.createElement('div');
+          when.className = 'when num';
+          when.textContent = fmt(log.reminder_date) + ' · dicatat ' + fmtDt(log.created_at);
           left.appendChild(who);
-          left.appendChild(meta);
+          left.appendChild(when);
           const right = document.createElement('div');
-          right.className = 'log-meta num';
-          right.textContent = 'sudah ' + fmt(log.response_sudah_count) + ' / belum ' + fmt(log.response_belum_count);
+          right.className = 'when num';
+          right.textContent = 'sudah ' + fmt(log.response_sudah_count) + ' · belum ' + fmt(log.response_belum_count);
           li.appendChild(left);
           li.appendChild(right);
           list.appendChild(li);
         }
         const toggle = document.getElementById('logs-toggle');
         toggle.hidden = logsCache.length <= 10;
-        toggle.textContent = logsExpanded ? 'Tampilkan 10' : 'Tampilkan 50';
+        toggle.lastChild.textContent = logsOpen ? 'Tampilkan 10' : 'Tampilkan 50';
       }
-      function syncUrlState() {
+      function syncUrl() {
         const params = new URLSearchParams();
-        if (activePhaseFilter !== 'all') params.set('phase', activePhaseFilter);
-        if (searchKeyword) params.set('q', searchKeyword);
-        const query = params.toString();
-        history.replaceState(null, '', query ? '?' + query : location.pathname);
+        if (phaseFilter !== 'all') params.set('phase', phaseFilter);
+        if (keyword) params.set('q', keyword);
+        const q = params.toString();
+        history.replaceState(null, '', q ? '?' + q : location.pathname);
       }
-      function paintFilterState() {
-        for (const btn of document.querySelectorAll('.phase-filter')) {
-          btn.setAttribute('aria-pressed', btn.getAttribute('data-phase-filter') === activePhaseFilter ? 'true' : 'false');
-        }
-      }
-      function readUrlState() {
+      function readUrl() {
         const params = new URLSearchParams(location.search);
         const asked = params.get('phase') || 'all';
-        const known = Array.from(document.querySelectorAll('.phase-filter')).map((btn) => btn.getAttribute('data-phase-filter'));
-        activePhaseFilter = known.includes(asked) ? asked : 'all';
-        searchKeyword = (params.get('q') || '').trim().toLowerCase();
-        const search = document.getElementById('users-search');
-        if (search) search.value = searchKeyword;
-        paintFilterState();
+        const known = Array.from(document.querySelectorAll('.phase-filter')).map((b) => b.getAttribute('data-phase-filter'));
+        phaseFilter = known.includes(asked) ? asked : 'all';
+        keyword = (params.get('q') || '').trim().toLowerCase();
+        document.getElementById('users-search').value = keyword;
       }
-      async function loadPanel(noteId, task) {
+      async function guard(noteId, task) {
         try {
           await task();
-          if (noteId) {
-            const node = document.getElementById(noteId);
-            if (node) { node.hidden = true; node.textContent = ''; }
-          }
+          const n = document.getElementById(noteId);
+          if (n) { n.hidden = true; n.textContent = ''; }
           return { ok: true, error: '' };
         } catch (err) {
-          if (noteId) {
-            const node = document.getElementById(noteId);
-            if (node) {
-              node.hidden = false;
-              node.textContent = 'Bagian ini gagal diperbarui: ' + err.message + '. Isi di bawah adalah hasil muat terakhir yang berhasil.';
-            }
-          }
+          const n = document.getElementById(noteId);
+          if (n) { n.hidden = false; n.textContent = 'Bagian ini gagal dimuat: ' + err.message + '. Menampilkan hasil muat sebelumnya.'; }
           return { ok: false, error: err.message };
         }
       }
-      async function loadAll(showFeedback) {
-        const refreshBtn = document.getElementById('refresh-btn');
-        const errorBanner = document.getElementById('error-banner');
-        const errorText = document.getElementById('error-text');
-        errorBanner.hidden = true;
-        refreshBtn.disabled = true;
-        refreshBtn.textContent = 'Memuat...';
+      async function loadAll(withToast) {
+        const btn = document.getElementById('refresh-btn');
+        const banner = document.getElementById('error-banner');
+        banner.hidden = true;
+        btn.disabled = true;
         const results = await Promise.all([
-          loadPanel('status-note', async () => { healthCache = await fetchJson('/admin/api/health'); renderStatus(); }),
-          loadPanel('users-note', async () => { summaryCache = await fetchJson('/admin/api/summary'); renderToday(); renderActions(); }),
-          loadPanel('users-note', async () => { const data = await fetchJson('/admin/api/users'); usersCache = data.users || []; renderPhases(); renderUsersTable(); }),
-          loadPanel('logs-note', async () => { const data = await fetchJson('/admin/api/logs'); logsCache = data.logs || []; renderLogs(); }),
+          guard('status-note', async () => { healthCache = await fetchJson('/admin/api/health'); renderStatus(); }),
+          guard('users-note', async () => { summaryCache = await fetchJson('/admin/api/summary'); renderToday(); renderActions(); }),
+          guard('users-note', async () => { const d = await fetchJson('/admin/api/users'); usersCache = d.users || []; renderUsers(); }),
+          guard('logs-note', async () => { const d = await fetchJson('/admin/api/logs'); logsCache = d.logs || []; renderLogs(); }),
         ]);
         const failed = results.filter((r) => !r.ok);
         if (failed.length) {
-          errorText.textContent = 'Sebagian data gagal dimuat (' + failed.map((r) => r.error).join('; ') + '). Bagian yang gagal ditandai di atasnya.';
-          errorBanner.hidden = false;
-          setText('last-updated', 'gagal memperbarui ' + new Date().toLocaleString('id-ID'));
+          document.getElementById('error-text').textContent = 'Sebagian data gagal dimuat (' + failed.map((r) => r.error).join(', ') + '). Bagian yang gagal ditandai.';
+          banner.hidden = false;
+          setText('last-updated', 'gagal ' + new Date().toLocaleTimeString('id-ID'));
         } else {
-          setText('last-updated', new Date().toLocaleString('id-ID'));
-          if (showFeedback !== false) showToast('Data sudah diperbarui.');
+          setText('last-updated', new Date().toLocaleTimeString('id-ID'));
+          if (withToast) showToast('Data diperbarui');
         }
-        refreshBtn.disabled = false;
-        refreshBtn.textContent = 'Muat ulang data';
+        btn.disabled = false;
       }
       document.getElementById('refresh-btn').addEventListener('click', () => loadAll(true));
       document.getElementById('error-retry').addEventListener('click', () => loadAll(true));
-      document.getElementById('logs-toggle').addEventListener('click', () => { logsExpanded = !logsExpanded; renderLogs(); });
+      document.getElementById('logs-toggle').addEventListener('click', () => { logsOpen = !logsOpen; renderLogs(); });
       for (const btn of document.querySelectorAll('.phase-filter')) {
-        btn.addEventListener('click', () => {
-          activePhaseFilter = btn.getAttribute('data-phase-filter') || 'all';
-          paintFilterState();
-          syncUrlState();
-          renderUsersTable();
-        });
+        btn.addEventListener('click', () => { phaseFilter = btn.getAttribute('data-phase-filter') || 'all'; syncUrl(); renderUsers(); });
       }
       document.getElementById('users-search').addEventListener('input', (event) => {
-        searchKeyword = String(event.target.value || '').trim().toLowerCase();
-        syncUrlState();
-        renderUsersTable();
+        keyword = String(event.target.value || '').trim().toLowerCase();
+        syncUrl();
+        renderUsers();
       });
-      readUrlState();
+      readUrl();
       loadAll(false);
     </script>
   </body>
@@ -2713,164 +2348,161 @@ function renderAdminUserDetailPage(waId, options = {}) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="${csrf}">
+    <title>Detail user - RemindCare Admin</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <title>Detail User - RemindCare Admin</title>
-    <style nonce="${nonce}">
-      :root { --bg:#f8fafc; --panel:#fff; --text:#111827; --muted:#667085; --border:#cfd6e3; --border-strong:#7d8695; --control-border:#7d8695; --placeholder:#667085; --focus:#4f46e5; --accent:#4f46e5; --bad:#b42318; --shadow:0 14px 34px rgba(17,24,39,.07); }
-      *{box-sizing:border-box}
-      body{margin:0;font-family:"Plus Jakarta Sans",ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
-      .container{width:min(1080px,100%);margin:0 auto;padding:24px}
-      .table-wrap,.table-wrap table{max-width:100%}
-      .top{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;justify-content:space-between}
-      .title{font-size:clamp(24px,3vw,32px);letter-spacing:-.04em;line-height:1.08;font-weight:760;margin:0}
-      .muted{color:var(--muted);font-size:12px;line-height:1.5}
-      .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border-radius:10px;border:1px solid #cfd6e3;background:#fff;color:#111827;text-decoration:none;font-size:13px;font-weight:650}
-      .btn:hover{background:#f9fafb;border-color:var(--border-strong)}
-      .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:var(--shadow);margin-top:14px}
-      .panel-title{font-size:15px;font-weight:760;margin:0 0 12px}
-      .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
-      .label{font-size:12px;color:var(--muted);font-weight:650}.value{font-size:19px;font-weight:760;margin-top:6px;overflow-wrap:anywhere;letter-spacing:-.02em}
-      .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:14px;background:#fff}
-      table{width:100%;border-collapse:collapse;font-size:13px;min-width:620px}
-      caption{text-align:left;padding:10px 12px}
-      th,td{text-align:left;padding:11px 12px;border-bottom:1px solid #edf0f5;vertical-align:top;overflow-wrap:anywhere}
-      th{background:#f9fafb;color:#475467;font-weight:700}
-      .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;flex-wrap:wrap}
-      .pager button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid #cfd6e3;background:#fff;font-size:13px;font-family:inherit;cursor:pointer}
-      .pager button:hover,.pager button:focus-visible{border-color:var(--border-strong)}
-      .pager button:disabled{color:var(--muted);cursor:default;background:#f9fafb}
-      a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
-      .stale-note{color:var(--bad);font-size:12px;margin:10px 0 0}.stale-note:empty{display:none}
-      @media (max-width:720px){.container{padding:16px}.value{font-size:16px}.top{flex-direction:column;align-items:stretch}.top .top{flex-direction:row}.btn{flex:1 1 auto}.panel{padding:14px}}
-      @media (max-width:420px){.grid{grid-template-columns:1fr}.pager{justify-content:space-between}}
-      @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}    </style>
+    <style nonce="${nonce}">${ADMIN_CSS}
+      .kv.kv-3 > div { border-top: none; }
+      .pager { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
+    </style>
   </head>
   <body>
-    <div class="container">
-      <div class="top">
-        <div>
-          <h1 class="title" id="name">Detail User</h1>
-          <div class="muted" id="wa">${safeWaId}</div>
+    <header class="topbar">
+      <div class="brand">
+        ${icon("pulse")}
+        <h1 id="name">Detail user</h1>
+        <span class="tag num" id="wa">${safeWaId}</span>
+      </div>
+      <div class="row">
+        <a class="btn" href="/admin">${icon("chevron")}Daftar user</a>
+        <a class="btn" href="/admin/api/users/${encodeURIComponent(waId || "")}/export.csv" download>${icon("download")}CSV</a>
+      </div>
+    </header>
+
+    <div class="wrap">
+      <p class="note" id="page-note" role="status" aria-live="polite"></p>
+
+      <section class="panel" aria-labelledby="ringkasan-title">
+        <div class="panel-head">
+          <h2 id="ringkasan-title">${icon("users")}Ringkasan</h2>
+          <span id="status-badge" class="badge">-</span>
         </div>
-        <div class="top">
-          <a class="btn" href="/admin">Kembali</a>
-          <a class="btn" id="csv" href="/admin/api/users/${encodeURIComponent(
-            waId || "",
-          )}/export.csv">Download CSV</a>
+        <dl class="kv kv-3">
+          <div><dt>Fase</dt><dd id="phase">-</dd></div>
+          <div><dt>Status</dt><dd id="status">-</dd></div>
+          <div><dt>Jam pengingat</dt><dd id="time" class="num">-</dd></div>
+          <div><dt>Tanggal persalinan</dt><dd id="delivery-date" class="num">-</dd></div>
+          <div><dt>Total sudah</dt><dd id="sudah" class="num">-</dd></div>
+          <div><dt>Total belum</dt><dd id="belum" class="num">-</dd></div>
+        </dl>
+      </section>
+
+      <section class="panel" aria-labelledby="persalinan-title">
+        <div class="panel-head"><h2 id="persalinan-title">${icon("check")}Data persalinan</h2></div>
+        <div class="table-wrap">
+          <table>
+            <caption>Terisi setelah user menjawab pertanyaan validasi persalinan.</caption>
+            <thead><tr><th scope="col">Item</th><th scope="col">Nilai</th></tr></thead>
+            <tbody id="delivery-body" aria-busy="true"><tr><td colspan="2" class="muted">Memuat.</td></tr></tbody>
+          </table>
         </div>
-      </div>
+      </section>
 
-      <div class="panel">
-        <h2 class="panel-title">Ringkasan user</h2>
-        <div class="grid">
-          <div><div class="label">Status</div><div class="value" id="status">-</div></div>
-          <div><div class="label">Fase</div><div class="value" id="phase">-</div></div>
-          <div><div class="label">Jam pengingat</div><div class="value" id="time">-</div></div>
-          <div><div class="label">Tanggal persalinan</div><div class="value" id="delivery-date">-</div></div>
-          <div><div class="label">Total sudah</div><div class="value" id="sudah">-</div></div>
-          <div><div class="label">Total belum</div><div class="value" id="belum">-</div></div>
+      <section class="panel" aria-labelledby="nifas-title">
+        <div class="panel-head"><h2 id="nifas-title">${icon("clock")}Kunjungan nifas dan bayi</h2></div>
+        <div class="table-wrap">
+          <table>
+            <caption>Baris muncul setelah jadwal KF atau KN pertama dikirim.</caption>
+            <thead><tr><th scope="col">Kunjungan</th><th scope="col">Status</th><th scope="col">Tanggal</th></tr></thead>
+            <tbody id="pp-body" aria-busy="true"><tr><td colspan="3" class="muted">Memuat.</td></tr></tbody>
+          </table>
         </div>
-      </div>
-      <p class="stale-note" id="page-note" role="status" aria-live="polite"></p>
+      </section>
 
-      <div class="panel">
-        <h2 class="panel-title">Data persalinan</h2>
-        <div class="table-wrap"><table><caption class="muted">Data persalinan user ini.</caption><thead><tr><th scope="col">Item</th><th scope="col">Nilai</th></tr></thead><tbody id="delivery-body" aria-busy="true"><tr><td colspan="2" class="muted">Memuat data persalinan...</td></tr></tbody></table></div>
-      </div>
-
-      <div class="panel">
-        <h2 class="panel-title">Riwayat kunjungan nifas dan bayi</h2>
-        <div class="table-wrap"><table><caption class="muted">Riwayat kunjungan nifas dan bayi user ini.</caption><thead><tr><th scope="col">Kunjungan</th><th scope="col">Status</th><th scope="col">Tanggal</th></tr></thead><tbody id="pp-body" aria-busy="true"><tr><td colspan="3" class="muted">Memuat riwayat kunjungan...</td></tr></tbody></table></div>
-      </div>
-
-      <div class="panel">
-        <h2 class="panel-title">Riwayat pengingat</h2>
-        <div class="table-wrap"><table><caption class="muted">Riwayat pengingat user ini, 20 baris per halaman.</caption><thead><tr><th scope="col">Tanggal</th><th scope="col">Jawaban</th><th scope="col">Sudah</th><th scope="col">Belum</th><th scope="col">Waktu dicatat</th></tr></thead><tbody id="logs-body" aria-busy="true"><tr><td colspan="5" class="muted">Memuat riwayat pengingat...</td></tr></tbody></table></div>
+      <section class="panel" aria-labelledby="riwayat-title">
+        <div class="panel-head">
+          <h2 id="riwayat-title">${icon("list")}Riwayat pengingat</h2>
+          <span class="muted num" id="page-info">-</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <caption>20 baris per halaman.</caption>
+            <thead><tr><th scope="col">Tanggal</th><th scope="col">Jawaban</th><th scope="col">Sudah</th><th scope="col">Belum</th><th scope="col">Dicatat</th></tr></thead>
+            <tbody id="logs-body" aria-busy="true"><tr><td colspan="5" class="muted">Memuat.</td></tr></tbody>
+          </table>
+        </div>
         <div class="pager">
-          <button type="button" id="prev">Sebelumnya</button>
-          <span class="muted" id="page-info">-</span>
-          <button type="button" id="next">Berikutnya</button>
+          <button type="button" id="prev" class="btn-icon" aria-label="Halaman sebelumnya" title="Sebelumnya" style="transform:scaleX(-1)">${icon("chevron")}</button>
+          <button type="button" id="next" class="btn-icon" aria-label="Halaman berikutnya" title="Berikutnya">${icon("chevron")}</button>
         </div>
-      </div>
+      </section>
     </div>
+
     <script nonce="${nonce}">
       const waId = ${escapeForScriptContext(waId || "")};
       let page = 0;
       const limit = 20;
-      let totalLogs = 0;
-      function fmt(v){ return v===null||v===undefined||v===''?'-':v; }
-      function fmtDt(v){ if(!v) return '-'; const d=new Date(v); return Number.isNaN(d.getTime())?String(v):d.toLocaleString('id-ID'); }
-      function classifyPhase(user){
-        const hasPostpartum = Number(user.postpartum_total || 0) > 0 || !!user.delivery_date_iso;
-        if (hasPostpartum) return 'pasca_kehamilan';
-        const hasLaborSignals =
-          Number(user.delivery_data_step || 0) > 0 ||
-          !!user.delivery_poll_stage ||
-          !!user.delivery_hpl_poll_sent_date ||
-          !!user.delivery_hpl3_poll_sent_date ||
-          user.delivery_hpl_response === 'Sudah' ||
-          user.delivery_hpl3_response === 'Sudah';
-        if (hasLaborSignals) return 'persalinan';
+      const CSRF_TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+      function csrfHeaders(extra) { return Object.assign({ 'X-CSRF-Token': CSRF_TOKEN }, extra || {}); }
+      function fmt(v) { return v === null || v === undefined || v === '' ? '-' : v; }
+      function fmtDt(v) {
+        if (!v) return '-';
+        const d = new Date(v);
+        return Number.isNaN(d.getTime()) ? String(v) : d.toLocaleString('id-ID', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+      }
+      function classifyPhase(user) {
+        if (Number(user.postpartum_total || 0) > 0 || user.delivery_date_iso) return 'pasca_kehamilan';
+        const labor = Number(user.delivery_data_step || 0) > 0 || !!user.delivery_poll_stage || !!user.delivery_hpl_poll_sent_date ||
+          !!user.delivery_hpl3_poll_sent_date || user.delivery_hpl_response === 'Sudah' || user.delivery_hpl3_response === 'Sudah';
+        if (labor) return 'persalinan';
         if (user.status === 'onboarding' || !user.hpht_iso) return 'onboarding';
         return 'kehamilan';
       }
-      function phaseLabel(phase){
-        if (phase === 'kehamilan') return 'Kehamilan';
-        if (phase === 'persalinan') return 'Persalinan';
-        if (phase === 'pasca_kehamilan') return 'Pasca Kehamilan';
-        return 'Onboarding';
+      const PHASE_LABEL = { onboarding: 'Onboarding', kehamilan: 'Kehamilan', persalinan: 'Persalinan', pasca_kehamilan: 'Nifas' };
+      const STATUS_LABEL = { active: 'Aktif', paused: 'Dijeda', completed: 'Selesai', onboarding: 'Pendataan' };
+      const STATUS_TONE = { active: 'badge badge-ok', paused: 'badge badge-warn', completed: 'badge', onboarding: 'badge badge-accent' };
+      function setNote(text) { document.getElementById('page-note').textContent = text || ''; }
+      function setBusy(id, busy) { const n = document.getElementById(id); if (n) n.setAttribute('aria-busy', busy ? 'true' : 'false'); }
+      async function fetchJson(url) {
+        const res = await fetch(url, { headers: csrfHeaders({ Accept: 'application/json' }) });
+        if (res.status === 401) { window.location.href = '/admin/login?expired=1'; throw new Error('Sesi berakhir'); }
+        if (!res.ok) { const err = new Error('kode ' + res.status); err.status = res.status; throw err; }
+        return res.json();
       }
-      function setPageNote(text){
-        const node = document.getElementById('page-note');
-        if (!node) return;
-        node.textContent = text || '';
-      }
-      function setBusy(id, busy){
-        const node = document.getElementById(id);
-        if (node) node.setAttribute('aria-busy', busy ? 'true' : 'false');
-      }
-      const CSRF_TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
-      function csrfHeaders(extra) {
-        return Object.assign({ 'X-CSRF-Token': CSRF_TOKEN }, extra || {});
-      }
-      async function fetchJson(url){
-        const r = await fetch(url,{headers:csrfHeaders({Accept:'application/json'})});
-        if (r.status === 401) { window.location.href = '/admin/login?expired=1'; throw new Error('Sesi berakhir'); }
-        if (!r.ok) { const err = new Error('Permintaan gagal dengan kode ' + r.status); err.status = r.status; throw err; }
-        return r.json();
-      }
-      function renderRows(tbody, rows, mapper, emptyText, colspan, rowHeader){
+      function fillRows(tbody, rows, mapper, emptyText, colspan, rowHeader) {
         tbody.innerHTML = '';
         tbody.setAttribute('aria-busy', 'false');
-        if(!rows || !rows.length){ tbody.innerHTML = '<tr><td colspan="'+colspan+'" class="muted">'+emptyText+'</td></tr>'; return; }
-        rows.forEach((row)=>{
-          const tr=document.createElement('tr');
-          mapper(row).forEach((cell, index)=>{
-            const isRowHeader = !!rowHeader && index === 0;
-            const cellNode=document.createElement(isRowHeader ? 'th' : 'td');
-            if (isRowHeader) cellNode.setAttribute('scope', 'row');
-            cellNode.textContent=fmt(cell);
-            tr.appendChild(cellNode);
+        if (!rows || !rows.length) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = colspan;
+          td.className = 'muted';
+          td.textContent = emptyText;
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+          return;
+        }
+        for (const row of rows) {
+          const tr = document.createElement('tr');
+          mapper(row).forEach((cell, index) => {
+            const head = !!rowHeader && index === 0;
+            const node = document.createElement(head ? 'th' : 'td');
+            if (head) node.setAttribute('scope', 'row');
+            node.textContent = fmt(cell);
+            tr.appendChild(node);
           });
           tbody.appendChild(tr);
-        });
+        }
       }
-      async function loadDetail(){
-        setPageNote('');
-        ['delivery-body', 'pp-body'].forEach((id)=>setBusy(id, 'true'));
+      async function loadDetail() {
+        setNote('');
+        setBusy('delivery-body', true);
+        setBusy('pp-body', true);
         try {
           const data = await fetchJson('/admin/api/users/' + encodeURIComponent(waId));
           const user = data.user || {};
-          document.getElementById('name').textContent = fmt(user.name || 'Detail User');
+          document.getElementById('name').textContent = fmt(user.name);
           document.getElementById('wa').textContent = fmt(user.wa_id);
-          document.getElementById('status').textContent = fmt(user.status);
-          document.getElementById('phase').textContent = phaseLabel(classifyPhase(user));
+          document.getElementById('status').textContent = STATUS_LABEL[user.status] || fmt(user.status);
+          document.getElementById('phase').textContent = PHASE_LABEL[classifyPhase(user)];
           document.getElementById('time').textContent = fmt(user.reminder_time);
           document.getElementById('delivery-date').textContent = fmt(user.delivery_date_iso || user.delivery_date);
           document.getElementById('sudah').textContent = fmt(data.totals && data.totals.total_sudah);
           document.getElementById('belum').textContent = fmt(data.totals && data.totals.total_belum);
+          const badgeNode = document.getElementById('status-badge');
+          badgeNode.className = STATUS_TONE[user.status] || 'badge';
+          badgeNode.textContent = STATUS_LABEL[user.status] || fmt(user.status);
           const deliveryRows = [
             ['Validasi HPL', user.delivery_hpl_response],
             ['Validasi HPL +3', user.delivery_hpl3_response],
@@ -2881,59 +2513,42 @@ function renderAdminUserDetailPage(waId, options = {}) {
             ['Penyulit persalinan', user.delivery_with_complication],
             ['Jenis kelamin bayi', user.baby_gender],
             ['Berat badan bayi', user.baby_birth_weight],
-            ['Keluhan ibu saat ini', user.mother_current_complaint],
-            ['Data selesai diisi', user.delivery_data_completed_at]
-          ];
-          const filledDeliveryRows = deliveryRows.filter((row) => row[1] !== null && row[1] !== undefined && row[1] !== '');
-          renderRows(document.getElementById('delivery-body'), filledDeliveryRows, (r)=>r, 'Belum ada data persalinan. Data terisi setelah user menjawab pertanyaan validasi persalinan di WhatsApp.', 2, true);
-          renderRows(
-            document.getElementById('pp-body'),
-            data.postpartum_logs || [],
-            (x)=>[x.visit_label || x.visit_code, x.response || 'Pending', fmtDt(x.response_at || x.sent_at || x.due_at)],
-            'Belum ada riwayat kunjungan nifas. Baris muncul setelah jadwal KF atau KN pertama dikirim.',
-            3,
-            false
-          );
+            ['Keluhan ibu', user.mother_current_complaint],
+            ['Data selesai diisi', user.delivery_data_completed_at],
+          ].filter((row) => row[1] !== null && row[1] !== undefined && row[1] !== '');
+          fillRows(document.getElementById('delivery-body'), deliveryRows, (r) => r, 'Belum ada data persalinan.', 2, true);
+          fillRows(document.getElementById('pp-body'), data.postpartum_logs || [],
+            (x) => [x.visit_label || x.visit_code, x.response || 'Pending', fmtDt(x.response_at || x.sent_at || x.due_at)],
+            'Belum ada riwayat kunjungan nifas.', 3, false);
         } catch (err) {
           setBusy('delivery-body', false);
           setBusy('pp-body', false);
-          if (err.status === 404) {
-            setPageNote('User dengan nomor ' + waId + ' tidak ditemukan di database. Periksa nomornya di daftar user, atau kembali ke daftar.');
-          } else if (err.message !== 'Sesi berakhir') {
-            setPageNote('Gagal memuat detail user: ' + err.message + '. Muat ulang halaman ini untuk mencoba lagi.');
-          }
+          if (err.status === 404) setNote('Nomor ' + waId + ' tidak ditemukan di database.');
+          else if (err.message !== 'Sesi berakhir') setNote('Gagal memuat detail: ' + err.message + '.');
         }
       }
-      async function loadLogs(){
+      async function loadLogs() {
         setBusy('logs-body', true);
         try {
-          const data = await fetchJson('/admin/api/users/' + encodeURIComponent(waId) + '/logs?limit=' + limit + '&offset=' + (page * limit));
-          totalLogs = Number(data.total || 0);
-          renderRows(
-            document.getElementById('logs-body'),
-            data.logs || [],
-            (x)=>[x.reminder_date, x.response, x.response_sudah_count, x.response_belum_count, fmtDt(x.created_at)],
-            'Belum ada riwayat pengingat untuk user ini. Riwayat terisi setelah pengingat pertama terkirim dan dijawab.',
-            5,
-            false
-          );
-          const totalPages = Math.max(1, Math.ceil(totalLogs / limit));
-          document.getElementById('page-info').textContent = 'Halaman ' + (page + 1) + ' dari ' + totalPages;
+          const data = await fetchJson('/admin/api/users/' + encodeURIComponent(waId) + '/logs?limit=' + limit + '&offset=' + page * limit);
+          const rows = data.logs || [];
+          const total = Number(data.total || 0);
+          fillRows(document.getElementById('logs-body'), rows,
+            (x) => [x.reminder_date, x.response || 'Pending', x.response_sudah_count, x.response_belum_count, fmtDt(x.created_at)],
+            'Belum ada riwayat pengingat.', 5, false);
+          const pages = Math.max(1, Math.ceil(total / limit));
+          document.getElementById('page-info').textContent = 'halaman ' + (page + 1) + ' dari ' + pages + ' · ' + total + ' baris';
           document.getElementById('prev').disabled = page <= 0;
-          document.getElementById('next').disabled = page >= totalPages - 1;
+          document.getElementById('next').disabled = page + 1 >= pages;
         } catch (err) {
           setBusy('logs-body', false);
-          document.getElementById('page-info').textContent = 'Riwayat gagal dimuat';
-          if (err.status === 404) {
-            document.getElementById('page-info').textContent = 'User tidak ditemukan';
-          } else if (err.message !== 'Sesi berakhir') {
-            setPageNote('Gagal memuat riwayat pengingat: ' + err.message + '. Muat ulang halaman ini untuk mencoba lagi.');
-          }
+          if (err.message !== 'Sesi berakhir') setNote('Gagal memuat riwayat: ' + err.message + '.');
         }
       }
-      document.getElementById('prev').addEventListener('click', async ()=>{ if(page<=0) return; page -= 1; await loadLogs(); });
-      document.getElementById('next').addEventListener('click', async ()=>{ const tp = Math.max(1, Math.ceil(totalLogs / limit)); if(page>=tp-1) return; page += 1; await loadLogs(); });
-      Promise.all([loadDetail(), loadLogs()]);
+      document.getElementById('prev').addEventListener('click', () => { if (page > 0) { page -= 1; loadLogs(); } });
+      document.getElementById('next').addEventListener('click', () => { page += 1; loadLogs(); });
+      loadDetail();
+      loadLogs();
     </script>
   </body>
 </html>`;

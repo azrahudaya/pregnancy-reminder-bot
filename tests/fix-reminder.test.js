@@ -183,40 +183,50 @@ async function run() {
     }
   });
 
-  await test("halaman admin memuat perbaikan layout, fokus, dan CSRF", () => {
+  await test("halaman admin memakai satu sistem gaya dengan radius kecil, ikon, dan CSRF", () => {
     const settings = require("../lib/admin-settings-page.js");
+    const ui = require("../lib/admin-ui.js");
     const ctx = { nonce: "n0nce", csrf: "csrf-token" };
     const dashboard = mod.renderAdminDashboardPage(ctx);
     const detail = mod.renderAdminUserDetailPage("6282240269818@c.us", ctx);
     const settingsPage = settings.renderAdminSettingsPage(ctx);
+    const login = mod.renderAdminLoginPage("", ctx);
 
-    for (const [name, html] of [
-      ["dashboard", dashboard],
-      ["detail", detail],
-      ["settings", settingsPage],
-    ]) {
-      assert.ok(/--focus:\s*#4f46e5/.test(html), `${name} memakai token fokus kontras`);
-      assert.ok(/outline:\s*3px solid var\(--focus\)/.test(html), `${name} memakai focus ring solid`);
-      assert.ok(html.includes('meta name="csrf-token"'), `${name} memuat meta CSRF`);
-      assert.ok(html.includes("Plus Jakarta Sans"), `${name} memakai font yang dipilih`);
-      assert.ok(!html.includes("fonts.googleapis.com/css2?family=Lato"), `${name} tidak memuat font yang tidak dipakai`);
+    assert.ok(ui.ADMIN_CSS.includes("--r-2: 6px"), "radius kontrol kecil");
+    assert.ok(ui.ADMIN_CSS.includes("--r-3: 8px"), "radius panel kecil");
+    assert.ok(!ui.ADMIN_CSS.includes("border-radius: 999px"), "tidak ada pill");
+    assert.ok(!ui.ADMIN_CSS.includes("linear-gradient"), "tanpa gradien");
+    assert.ok(!ui.ADMIN_CSS.includes("border-left: 3px"), "tanpa strip warna di tepi panel");
+    assert.ok(ui.ADMIN_CSS.includes("outline: 2px solid var(--focus)"), "focus ring 2 px");
+    assert.ok(ui.ADMIN_CSS.includes("--ctl-h: 44px"), "kontrol membesar di layar kecil");
+    assert.ok(ui.ADMIN_CSS.includes("grid-template-columns: repeat(2, minmax(0, 1fr))"), "grid mobile bisa menyusut");
+    assert.ok(!ui.ADMIN_CSS.includes("fonts.googleapis.com/css2?family=Lato"), "font tak terpakai tidak dimuat");
+
+    for (const [name, html] of [["dashboard", dashboard], ["detail", detail], ["settings", settingsPage], ["login", login]]) {
+      assert.ok(html.includes("Plus Jakarta Sans"), `${name} memakai font terpilih`);
+      assert.ok(html.includes("ADMIN_CSS") === false, `${name} tidak menyisakan placeholder`);
+      assert.ok(html.includes('class="panel"'), `${name} memakai panel bersama`);
+      assert.ok((html.match(/<svg/g) || []).length >= 1, `${name} memakai ikon`);
+      assert.ok(html.includes("--r-2: 6px"), `${name} memuat sistem gaya bersama`);
+      assert.ok(!html.includes("\u2014"), `${name} tanpa em dash`);
     }
-    for (const [name, html] of [
-      ["dashboard", dashboard],
-      ["settings", settingsPage],
-    ]) {
-      assert.ok(html.includes('grid-template-columns: minmax(0, 1fr)'), `${name} memakai kolom grid yang bisa menyusut`);
-      assert.ok(html.includes('value="csrf-token"'), `${name} form logout membawa CSRF`);
+    for (const [name, html] of [["dashboard", dashboard], ["settings", settingsPage], ["detail", detail], ["login", login]]) {
+      assert.ok(/outline: 2px solid var\(--focus\)/.test(html), `${name} punya focus ring terlihat`);
     }
-    // kokpit operasional: status bot dulu, lalu tindakan, lalu angka hari ini
-    assert.ok(dashboard.includes('id="status-panel"'), "dashboard punya blok status bot");
-    assert.ok(dashboard.includes('id="action-list"'), "dashboard punya daftar perlu tindakan");
-    assert.ok(dashboard.includes('id="today-waiting"'), "dashboard punya angka pengingat hari ini");
-    assert.ok(dashboard.includes("a.row-link"), "dashboard memakai tautan baris yang bisa difokus");
-    assert.ok(!dashboard.includes("row-clickable"), "dashboard tidak memakai baris yang hanya bisa diklik mouse");
-    assert.ok(dashboard.includes('aria-describedby') === false, "dashboard tidak butuh deskripsi tambahan pada input cari");
-    assert.ok(settingsPage.includes('aria-describedby="setting-'), "halaman pengaturan menghubungkan hint ke input");
-    assert.ok(detail.includes(".table-wrap,.table-wrap table{max-width:100%}"), "detail membatasi lebar tabel");
+    assert.ok(dashboard.includes('value="csrf-token"'), "form logout dashboard membawa CSRF");
+    assert.ok(settingsPage.includes('value="csrf-token"'), "form logout pengaturan membawa CSRF");
+    assert.ok(settingsPage.includes('aria-describedby="setting-'), "input pengaturan terhubung ke hint");
+
+    // kokpit operasional, urutannya status lalu tindakan lalu angka hari ini
+    const order = ['id="status-panel"', 'id="action-list"', 'id="today-waiting"', 'id="users-body"', 'id="logs-body"']
+      .map((marker) => dashboard.indexOf(marker));
+    assert.ok(order.every((index) => index > -1), "bagian kokpit lengkap");
+    assert.ok(order.every((index, i) => i === 0 || index > order[i - 1]), "urutan bagian kokpit benar");
+    assert.ok(dashboard.includes("a.row-link"), "tautan baris bisa difokus keyboard");
+    assert.ok(!dashboard.includes("row-clickable"), "tidak ada baris yang hanya bisa diklik mouse");
+    assert.ok(dashboard.includes("aria-live"), "perubahan status diumumkan");
+    assert.ok(detail.includes('aria-label="Halaman berikutnya"'), "tombol pager punya nama untuk pembaca layar");
+    assert.ok(detail.includes('class="kv kv-3"'), "ringkasan detail memakai daftar nilai rapat");
   });
 
   console.log("semua tes perbaikan reminder lulus");
