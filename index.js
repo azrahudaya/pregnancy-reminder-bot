@@ -82,9 +82,13 @@ const POLL_RETRY_MAX_DELAY_MS = Number(
 const REMINDER_LOOP_CONCURRENCY = Number(
   process.env.REMINDER_LOOP_CONCURRENCY || 1,
 );
-const ADMIN_WEB_COOKIE_SECURE =
-  /^(1|true)$/i.test(process.env.ADMIN_WEB_COOKIE_SECURE || "") ||
-  String(process.env.NODE_ENV || "").toLowerCase() === "production";
+const ADMIN_WEB_COOKIE_SECURE = (() => {
+  const explicit = String(process.env.ADMIN_WEB_COOKIE_SECURE || "").trim();
+  if (explicit) {
+    return /^(1|true)$/i.test(explicit);
+  }
+  return String(process.env.NODE_ENV || "").toLowerCase() === "production";
+})();
 const DISABLE_SANDBOX =
   /^(1|true)$/i.test(process.env.PUPPETEER_NO_SANDBOX || "") ||
   /^(1|true)$/i.test(process.env.DISABLE_CHROME_SANDBOX || "");
@@ -453,6 +457,103 @@ function normalizeWaIdInput(input) {
     return null;
   }
   return `${digits}@c.us`;
+}
+
+// Satu ibu bisa muncul sebagai dua alamat berbeda: nomor (@c.us) dan alamat
+// perangkat (@lid). Tanpa penyatuan, allowlist bisa meleset dan pengingat bisa
+// dikirim dua kali ke orang yang sama. Tabel alias menyimpan pemetaan itu.
+async function ensureAliasTable(db) {
+  await dbRun(
+    db,
+    `CREATE TABLE IF NOT EXISTS user_aliases (
+      alias TEXT PRIMARY KEY,
+      canonical TEXT NOT NULL,
+      first_seen TEXT,
+      last_seen TEXT
+    )`,
+  );
+}
+
+async function getCanonicalWaId(db, waId) {
+  if (!waId) {
+    return waId;
+  }
+  const row = await dbGet(db, "SELECT canonical FROM user_aliases WHERE alias = ?", [waId]);
+  return row && row.canonical ? row.canonical : waId;
+}
+
+async function recordAlias(db, alias, canonical) {
+  if (!alias || !canonical || alias === canonical) {
+    return;
+  }
+  const nowIso = nowWib().toISO();
+  await dbRun(
+    db,
+    `INSERT INTO user_aliases (alias, canonical, first_seen, last_seen)
+     VALUES (?, ?, ?, ?)
+     ON CONFLICT(alias) DO UPDATE SET canonical = excluded.canonical, last_seen = excluded.last_seen`,
+    [alias, canonical, nowIso, nowIso],
+  );
+}
+
+// Alamat cadangan untuk pengiriman: kalau alamat asal @lid gagal, coba nomor aslinya,
+// dan sebaliknya. Daftar ini dibaca dari alias yang pernah tercatat.
+async function getAlternateChatIds(db, waId) {
+  const alternates = [];
+  if (!waId || typeof waId !== "string") {
+    return alternates;
+  }
+  const direct = await dbGet(db, "SELECT canonical FROM user_aliases WHERE alias = ?", [waId]);
+  if (direct && direct.canonical && direct.canonical !== waId) {
+    alternates.push(direct.canonical);
+  }
+  const reverse = await dbAll(
+    db,
+    "SELECT alias FROM user_aliases WHERE canonical = ? AND alias <> ?",
+    [direct && direct.canonical ? direct.canonical : waId, waId],
+  );
+  for (const row of reverse || []) {
+    if (row && row.alias && !alternates.includes(row.alias)) {
+      alternates.push(row.alias);
+    }
+  }
+  return alternates;
+}
+
+// Ubah alamat pengirim pesan menjadi satu identitas kanonik. Nomor asli dari kontak
+// dipakai lebih dulu karena alamat @lid hanya berlaku untuk sesi perangkat.
+async function resolveSenderIdentity(db, client, msg) {
+  const raw = msg && msg.from ? String(msg.from) : "";
+  if (!raw) {
+    return { raw, waId: raw, aliases: [] };
+  }
+  const existing = await getCanonicalWaId(db, raw);
+  if (existing !== raw) {
+    return { raw, waId: existing, aliases: [raw] };
+  }
+  if (!raw.endsWith("@lid")) {
+    return { raw, waId: raw, aliases: [] };
+  }
+  let numberId = null;
+  try {
+    const contact =
+      typeof msg.getContact === "function" ? await msg.getContact() : null;
+    const number = contact && contact.number ? String(contact.number).replace(/\D/g, "") : "";
+    if (number) {
+      numberId = `${number}@c.us`;
+    }
+  } catch (err) {
+    console.warn("Gagal membaca kontak untuk pemetaan identitas:", err.message);
+  }
+  if (!numberId) {
+    return { raw, waId: raw, aliases: [] };
+  }
+  const canonicalUser = await getUser(db, numberId);
+  if (!canonicalUser) {
+    return { raw, waId: raw, aliases: [numberId] };
+  }
+  await recordAlias(db, raw, numberId);
+  return { raw, waId: numberId, aliases: [raw] };
 }
 
 function parseWaIdList(raw) {
@@ -1290,6 +1391,70 @@ function previewOf(value, fallback = "[pesan]") {
   return fallback;
 }
 
+// WhatsApp Web kini sering mengirim pesan dari alamat @lid, dan pengiriman balik
+// ke @lid itu sendiri kerap menghasilkan hasil kosong. Kontrak di sini tetap sama
+// seperti panggilan mentah: objek pesan saat benar-benar terkirim, null saat gagal.
+// Tidak ada lagi id buatan sendiri, karena id palsu membuat vote poll tidak pernah
+// cocok dengan pesan tersimpan dan membuat sistem mengira poll sudah terkirim.
+// Id asli WhatsApp selalu memuat alamat JID (misalnya "true_62812...@c.us_3EB0...").
+// Nilai lain dianggap bukan bukti pengiriman, sehingga tidak boleh dicatat sebagai terkirim.
+function isRealSentMessage(result) {
+  const serialized = result && result.id ? String(result.id._serialized || "") : "";
+  return serialized.includes("@");
+}
+
+// Alamat cadangan terakhir yang diketahui per identitas, dipakai balasan percakapan
+// supaya balasan tidak hilang hanya karena alamat asal @lid menolak pengiriman.
+const identityAlternates = new Map();
+
+function rememberAlternates(waId, alternates) {
+  if (!waId || !Array.isArray(alternates) || alternates.length === 0) {
+    return;
+  }
+  identityAlternates.set(waId, alternates.slice());
+}
+
+function chatIdCandidates(chatId, alternates) {
+  const known = identityAlternates.get(chatId) || [];
+  const merged = [];
+  for (const item of [...(Array.isArray(alternates) ? alternates : []), ...known]) {
+    if (typeof item === "string" && item && item !== chatId && !merged.includes(item)) {
+      merged.push(item);
+    }
+  }
+  alternates = merged;
+  const list = [chatId];
+  for (const alt of Array.isArray(alternates) ? alternates : []) {
+    if (typeof alt === "string" && alt && !list.includes(alt)) {
+      list.push(alt);
+    }
+  }
+  return list;
+}
+
+async function deliverMessage(resolved, chatId, payload, alternates) {
+  const candidates = chatIdCandidates(chatId, alternates);
+  for (const target of candidates) {
+    if (isUnsupportedDirectTarget(target)) {
+      continue;
+    }
+    let result = null;
+    try {
+      result = await resolved.sendMessage(target, payload, { sendSeen: false });
+    } catch (err) {
+      console.warn("Kirim gagal ke", target, ":", err && err.message ? err.message : err);
+      continue;
+    }
+    if (isRealSentMessage(result)) {
+      if (target !== chatId) {
+        console.warn("Kirim berhasil lewat identitas cadangan:", chatId, "->", target);
+      }
+      return result;
+    }
+  }
+  return null;
+}
+
 function sendText(client, chatId, text, sendOptions = {}) {
   const resolved = resolveClient(client);
   if (!resolved) {
@@ -1301,7 +1466,7 @@ function sendText(client, chatId, text, sendOptions = {}) {
     return null;
   }
   return sendGuard.send(
-    () => resolved.sendMessage(chatId, text, { sendSeen: false }),
+    () => deliverMessage(resolved, chatId, text, sendOptions.alternates),
     {
       kind: sendOptions.kind,
       label: chatId,
@@ -1321,7 +1486,7 @@ function sendPoll(client, chatId, poll, sendOptions = {}) {
     return null;
   }
   return sendGuard.send(
-    () => resolved.sendMessage(chatId, poll, { sendSeen: false }),
+    () => deliverMessage(resolved, chatId, poll, sendOptions.alternates),
     {
       kind: sendOptions.kind,
       label: chatId,
@@ -1534,12 +1699,20 @@ function clearAdminLoginFailures(ip) {
 
 function createAdminSession() {
   const token = crypto.randomBytes(24).toString("base64").replace(/[+/=]/g, "");
+  const csrf = crypto.randomBytes(24).toString("base64").replace(/[+/=]/g, "");
   const ttl =
     Number.isFinite(ADMIN_WEB_SESSION_TTL_MS) && ADMIN_WEB_SESSION_TTL_MS > 0
       ? ADMIN_WEB_SESSION_TTL_MS
       : 8 * 60 * 60 * 1000;
-  adminSessions.set(token, { expiresAt: Date.now() + ttl });
-  return token;
+  // token ikut disimpan supaya logout bisa mencabut sesi ini di sisi server
+  adminSessions.set(token, { expiresAt: Date.now() + ttl, csrf, token });
+  return { token, csrf };
+}
+
+function destroyAdminSession(token) {
+  if (token) {
+    adminSessions.delete(token);
+  }
 }
 
 function getAdminSession(req) {
@@ -1556,7 +1729,7 @@ function getAdminSession(req) {
     adminSessions.delete(token);
     return null;
   }
-  return token;
+  return session;
 }
 
 function setAdminCookie(res, token) {
@@ -1613,7 +1786,8 @@ function escapeForScriptContext(value) {
     .replace(/&/g, "\\u0026");
 }
 
-function renderAdminLoginPage(message) {
+function renderAdminLoginPage(message, options = {}) {
+  const nonce = options && options.nonce ? String(options.nonce) : "";
   const alert = message
     ? `<div class="alert" role="alert">${escapeHtml(message)}</div>`
     : "";
@@ -1623,28 +1797,32 @@ function renderAdminLoginPage(message) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>RemindCare Admin</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
-    <style>
+    <style nonce="${nonce}">
       :root {
-        --bg: #f7f7f7;
+        --bg: #f8fafc;
         --panel: #ffffff;
-        --text: #111111;
-        --muted: #666666;
-        --border: #e3e3e3;
+        --text: #111827;
+        --muted: #667085;
+        --border: #cfd6e3;
+        --border-strong: #7d8695;
+        --control-border: #7d8695;
+        --placeholder: #667085;
+        --focus: #4f46e5;
+        --accent: #4f46e5;
+        --accent-ink: #ffffff;
+        --danger: #b42318;
+        --danger-bg: #fff1f0;
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: "Lato", sans-serif;
-        background: radial-gradient(circle at top, #ffffff 0%, #f2f2f2 60%, #ededed 100%);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
         color: var(--text);
         min-height: 100vh;
         min-height: 100dvh;
-        display: flex;
-        align-items: center;
-        justify-content: center;
+        display: grid;
+        place-items: center;
         padding: 24px;
       }
       .card {
@@ -1652,74 +1830,74 @@ function renderAdminLoginPage(message) {
         max-width: 420px;
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 16px;
-        box-shadow: 0 18px 45px rgba(0,0,0,0.08);
-        padding: 32px;
+        border-radius: 18px;
+        box-shadow: 0 18px 42px rgba(17, 24, 39, 0.08);
+        padding: 28px;
         display: grid;
-        gap: 16px;
+        gap: 18px;
       }
       h1 {
         margin: 0;
         font-size: 24px;
+        letter-spacing: -0.02em;
       }
       .sub {
-        margin: 0;
+        margin: 6px 0 0;
         color: var(--muted);
         font-size: 14px;
+        line-height: 1.5;
       }
-      form {
-        display: grid;
-        gap: 14px;
-      }
+      form { display: grid; gap: 14px; }
       label {
-        font-size: 13px;
-        color: var(--muted);
         display: grid;
-        gap: 6px;
+        gap: 7px;
+        font-size: 13px;
+        font-weight: 650;
+        color: #344054;
       }
       input {
-        padding: 12px 14px;
+        width: 100%;
+        min-height: 44px;
+        padding: 11px 12px;
         border-radius: 10px;
-        border: 1px solid var(--border);
-        font-size: 15px;
+        border: 1px solid var(--control-border);
+        font-size: 14px;
         font-family: inherit;
         background: #fff;
-        min-height: 44px;
-        width: 100%;
+        color: var(--text);
       }
+      input::placeholder { color: var(--placeholder); }
       button {
-        padding: 12px 16px;
-        border-radius: 999px;
-        border: none;
-        background: #111;
-        color: #fff;
+        min-height: 44px;
+        padding: 11px 14px;
+        border-radius: 10px;
+        border: 1px solid #4338ca;
+        background: var(--accent);
+        color: var(--accent-ink);
         font-weight: 700;
         cursor: pointer;
-        transition: transform 0.2s ease;
-        min-height: 44px;
-        font-size: 15px;
+        font-size: 14px;
         font-family: inherit;
       }
-      button:hover {
-        transform: translateY(-1px);
-      }
+      button:hover { background: #4338ca; }
       input:focus-visible, button:focus-visible {
-        outline: 2px solid #111;
+        outline: 3px solid var(--focus);
         outline-offset: 2px;
+        border-color: var(--focus);
       }
       .alert {
-        background: #fdecec;
-        border: 1px solid #8c1d1d;
-        color: #8c1d1d;
+        background: var(--danger-bg);
+        border: 1px solid #fecdca;
+        color: var(--danger);
         padding: 12px 14px;
-        border-radius: 10px;
+        border-radius: 12px;
         font-size: 13px;
-        font-weight: 700;
-        animation: slideIn 0.35s ease;
+        font-weight: 650;
+        line-height: 1.45;
       }
-      @keyframes slideIn {
-        from { opacity: 0; transform: translateY(-6px); }
-        to { opacity: 1; transform: translateY(0); }
+      @media (max-width: 420px) {
+        body { padding: 16px; }
+        .card { padding: 22px; border-radius: 16px; }
       }
       @media (prefers-reduced-motion: reduce) {
         * { animation: none !important; transition: none !important; }
@@ -1747,409 +1925,183 @@ function renderAdminLoginPage(message) {
 </html>`;
 }
 
-function renderAdminDashboardPage() {
+function renderAdminDashboardPage(options = {}) {
+  const nonce = options && options.nonce ? String(options.nonce) : "";
+  const csrf = options && options.csrf ? String(options.csrf) : "";
   return `<!doctype html>
 <html lang="id">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="${csrf}">
     <title>RemindCare Admin</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
-    <style>
+    <style nonce="${nonce}">
       :root {
-        --bg: #f7f7f7;
+        --bg: #f8fafc;
         --panel: #ffffff;
-        --text: #0f0f0f;
-        --muted: #666666;
-        --border: #e3e3e3;
-        --border-strong: #8a8a8a;
-        --shadow: 0 8px 26px rgba(0,0,0,0.06);
+        --text: #111827;
+        --muted: #667085;
+        --border: #cfd6e3;
+        --border-strong: #7d8695;
+        --control-border: #7d8695;
+        --placeholder: #667085;
+        --focus: #4f46e5;
+        --accent: #4f46e5;
+        --accent-soft: #eef2ff;
+        --ok: #067647;
+        --ok-bg: #ecfdf3;
+        --warn: #b54708;
+        --warn-bg: #fffaeb;
+        --bad: #b42318;
+        --bad-bg: #fff1f0;
+        --shadow: 0 14px 34px rgba(17, 24, 39, 0.07);
       }
       * { box-sizing: border-box; }
       body {
         margin: 0;
-        font-family: "Lato", sans-serif;
-        background: linear-gradient(180deg, #ffffff 0%, #f4f4f4 100%);
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        background: var(--bg);
         color: var(--text);
       }
-      .container {
-        width: min(1280px, 100%);
-        margin: 0 auto;
-      }
-      header {
-        padding: 28px 28px 18px;
-        display: flex;
-        flex-wrap: wrap;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
+      a { color: inherit; }
+      .container { width: min(1220px, 100%); margin: 0 auto; }
+      .table-wrap, .table-wrap table { max-width: 100%; }
+      header.container {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 18px;
+        align-items: end;
+        padding: 28px 24px 18px;
       }
       h1 {
         margin: 0;
-        font-size: 24px;
+        font-size: clamp(26px, 3vw, 34px);
+        letter-spacing: -0.04em;
+        line-height: 1.05;
       }
-      .subtitle {
-        margin: 4px 0 0;
-        color: var(--muted);
-        font-size: 13px;
-      }
-      .actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 10px;
-        align-items: center;
-      }
+      .subtitle { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+      .muted { color: var(--muted); font-size: 12px; line-height: 1.5; }
+      .actions, .users-tools { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; min-width: 0; }
+      .actions > *, .users-tools > * { min-width: 0; }
       button, .ghost {
         display: inline-flex;
         align-items: center;
         justify-content: center;
         min-height: 44px;
-        padding: 10px 16px;
-        border-radius: 999px;
-        border: 1px solid var(--border-strong);
-        background: #111;
-        color: #fff;
-        font-weight: 700;
+        padding: 10px 14px;
+        border-radius: 10px;
+        border: 1px solid #cfd6e3;
+        background: #fff;
+        color: #111827;
+        font-weight: 650;
         cursor: pointer;
         text-decoration: none;
         font-size: 13px;
         font-family: inherit;
-        transition: transform 0.2s ease;
       }
-      .ghost {
-        background: #fff;
-        color: #111;
-      }
-      button:hover, .ghost:hover {
-        transform: translateY(-1px);
-      }
-      button:focus-visible, .ghost:focus-visible, .phase-filter:focus-visible, input:focus-visible, summary:focus-visible, tbody tr.row-clickable:focus-visible {
-        outline: 2px solid #111;
+      button { background: var(--accent); border-color: #4338ca; color: #fff; }
+      .ghost:hover, .export-menu summary:hover { background: #f9fafb; border-color: var(--border-strong); }
+      button:hover { background: #4338ca; }
+      button:focus-visible, .ghost:focus-visible, .phase-filter:focus-visible, input:focus-visible, summary:focus-visible, a:focus-visible {
+        outline: 3px solid var(--focus);
         outline-offset: 2px;
       }
-      main {
-        padding: 0 28px 40px;
-        display: grid;
-        gap: 24px;
-      }
-      .panel {
+      /* Tanpa minmax(0, 1fr) kolom grid mengikuti isi, dan satu anak yang lebar
+         (misalnya deretan filter) mendorong seluruh halaman melebar di layar kecil. */
+      main { padding: 0 24px 42px; display: grid; grid-template-columns: minmax(0, 1fr); gap: 18px; }
+      .panel, .card {
         background: var(--panel);
         border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 14px;
+        border-radius: 16px;
         box-shadow: var(--shadow);
       }
-      .stats {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-        gap: 14px;
-      }
-      .card {
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 16px;
-        box-shadow: var(--shadow);
-      }
-      .card .label {
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .card .value {
-        font-size: 22px;
-        font-weight: 700;
+      .panel { padding: 16px; }
+      .stats, .phase-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); gap: 12px; }
+      .card { padding: 16px; }
+      .card .label, .phase-card .label { font-size: 12px; color: var(--muted); font-weight: 650; }
+      .card .value, .phase-card .value {
+        font-size: 24px;
+        font-weight: 760;
         margin-top: 8px;
         overflow-wrap: anywhere;
-        word-break: break-word;
-        line-height: 1.25;
+        line-height: 1.15;
+        letter-spacing: -0.02em;
       }
-      .section-title {
-        font-size: 15px;
-        font-weight: 700;
-        margin: 0;
-      }
-      .section-head {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        justify-content: space-between;
-        flex-wrap: wrap;
-        margin-bottom: 12px;
-      }
-      .users-tools {
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        flex-wrap: wrap;
-      }
+      .section-title { font-size: 15px; font-weight: 760; margin: 0; }
+      .section-head { display: flex; gap: 12px; align-items: flex-start; justify-content: space-between; flex-wrap: wrap; margin-bottom: 14px; min-width: 0; }
+      .section-head > * { min-width: 0; }
       .search-input {
-        border: 1px solid var(--border-strong);
+        border: 1px solid var(--control-border);
         border-radius: 10px;
-        padding: 9px 12px;
-        font-size: 13px;
+        padding: 10px 12px;
+        font-size: 14px;
         min-width: 260px;
         min-height: 44px;
         background: #fff;
       }
-      .phase-stats {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-        gap: 14px;
-      }
-      .phase-card {
-        background: #fff;
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        padding: 14px;
-      }
-      .phase-card .label {
-        font-size: 12px;
-        color: var(--muted);
-      }
-      .phase-card .value {
-        font-size: 20px;
-        font-weight: 700;
-        margin-top: 8px;
-      }
-      .phase-filters {
+      .phase-card { background: #f9fafb; border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
+      .phase-filters { display: flex; flex-wrap: wrap; gap: 8px; min-width: 0; max-width: 100%; }
+      .phase-filter { border: 1px solid var(--border); background: #fff; color: #344054; border-radius: 10px; padding: 10px 12px; font-size: 12px; min-height: 44px; }
+      .phase-filter[aria-pressed="true"] { background: #111827; color: #fff; border-color: #111827; }
+      .phase-badge, .progress-badge { display: inline-flex; align-items: center; border-radius: 999px; padding: 4px 9px; font-size: 11px; font-weight: 700; border: 1px solid transparent; }
+      .phase-kehamilan, .progress-ok { background: var(--ok-bg); color: var(--ok); border-color: #abefc6; }
+      .phase-persalinan, .progress-warn { background: var(--warn-bg); color: var(--warn); border-color: #fedf89; }
+      .phase-pasca, .progress-info { background: var(--accent-soft); color: #3538cd; border-color: #c7d7fe; }
+      .phase-onboarding { background: #f2f4f7; color: #475467; border-color: #d0d5dd; }
+      .table-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--border); border-radius: 14px; background: #fff; }
+      table { width: 100%; border-collapse: collapse; background: var(--panel); font-size: 13px; min-width: 780px; }
+      caption { text-align: left; padding: 10px 12px; }
+      th, td { text-align: left; padding: 11px 12px; border-bottom: 1px solid #edf0f5; white-space: nowrap; }
+      th { background: #f9fafb; font-weight: 700; color: #475467; }
+      th:first-child, td:first-child { position: sticky; left: 0; z-index: 1; background: var(--panel); border-right: 1px solid var(--border); }
+      th:first-child { background: #f9fafb; }
+      tbody tr:hover, tbody tr:hover td:first-child { background: #f9fafb; }
+      /* Baris hanya penanda visual. Satu-satunya target interaktif adalah tautan nama,
+         supaya pola keyboard dan mouse sama dan tidak ada kontrol setengah jadi. */
+      td.name-cell { padding: 0; }
+      a.row-link {
         display: flex;
-        flex-wrap: wrap;
-        gap: 8px;
-        margin-bottom: 12px;
-      }
-      .phase-filter {
-        border: 1px solid var(--border-strong);
-        background: #fff;
-        color: #222;
-        border-radius: 10px;
-        padding: 10px 12px;
-        font-size: 12px;
-        font-weight: 700;
+        align-items: center;
         min-height: 44px;
+        padding: 11px 12px;
+        text-decoration: none;
+        font-weight: 650;
+        color: var(--accent);
       }
-      .phase-filter[aria-pressed="true"] {
-        background: #111;
-        color: #fff;
-        border: 2px solid #111;
-      }
-      .phase-badge {
-        display: inline-flex;
-        align-items: center;
-        border-radius: 999px;
-        padding: 4px 10px;
-        font-size: 11px;
-        font-weight: 700;
-        border: 1px solid transparent;
-      }
-      .phase-kehamilan {
-        background: #eef8f1;
-        color: #1f5f35;
-        border-color: currentColor;
-      }
-      .phase-persalinan {
-        background: #fff4e8;
-        color: #8a4b12;
-        border-color: currentColor;
-      }
-      .phase-pasca {
-        background: #eaf2ff;
-        color: #1f457d;
-        border-color: currentColor;
-      }
-      .phase-onboarding {
-        background: #f3f3f3;
-        color: #4d4d4d;
-        border-color: currentColor;
-      }
-      table {
-        width: 100%;
-        border-collapse: collapse;
-        background: var(--panel);
-        border: 1px solid var(--border);
-        border-radius: 14px;
-        overflow: hidden;
-        font-size: 13px;
-      }
-      .table-wrap {
-        width: 100%;
-        overflow-x: auto;
-        border-radius: 14px;
-      }
-      th, td {
-        text-align: left;
-        padding: 10px 12px;
-        border-bottom: 1px solid var(--border);
-        white-space: nowrap;
-      }
-      th {
-        background: #f2f2f2;
-        font-weight: 700;
-      }
-      th:first-child,
-      td:first-child {
-        position: sticky;
-        left: 0;
-        z-index: 1;
-        background: var(--panel);
-        border-right: 2px solid var(--border-strong);
-      }
-      th:first-child {
-        background: #f2f2f2;
-      }
-      tbody tr:hover {
-        background: #fafafa;
-      }
-      tbody tr.row-clickable {
-        cursor: pointer;
-      }
-      tbody tr.row-clickable:hover {
-        background: #f3f3f3;
-      }
-      tbody tr.row-clickable:hover td:first-child {
-        background: #f3f3f3;
-      }
-      .muted {
-        color: var(--muted);
-        font-size: 12px;
-      }
-      .grid {
-        display: grid;
-        gap: 14px;
-      }
-      .progress-badges {
-        display: flex;
-        gap: 6px;
-        flex-wrap: wrap;
-      }
-      .progress-badge {
-        display: inline-flex;
-        align-items: center;
-        border-radius: 999px;
-        padding: 4px 8px;
-        font-size: 11px;
-        font-weight: 700;
-        border: 1px solid var(--border-strong);
-        background: #fff;
-      }
-      .progress-ok {
-        background: #edf9f0;
-        border-color: currentColor;
-        color: #1e6239;
-      }
-      .progress-warn {
-        background: #fff3ef;
-        border-color: currentColor;
-        color: #8b3f1c;
-      }
-      .progress-info {
-        background: #eef3ff;
-        border-color: currentColor;
-        color: #244b86;
-      }
-      .toast {
-        position: fixed;
-        bottom: 24px;
-        right: 24px;
-        background: #111;
-        color: #fff;
-        padding: 12px 16px;
-        border-radius: 12px;
-        opacity: 0;
-        transform: translateY(8px);
-        pointer-events: none;
-        transition: opacity 0.2s ease, transform 0.2s ease;
-      }
-      .toast.show {
-        opacity: 1;
-        transform: translateY(0);
-      }
-      .error-banner {
-        display: grid;
-        gap: 10px;
-        border: 1px solid #8c1d1d;
-        background: #fdecec;
-        color: #8c1d1d;
-        border-radius: 14px;
-        padding: 14px;
-        font-size: 13px;
-      }
-      .error-banner[hidden] {
-        display: none;
-      }
-      .error-banner p {
-        margin: 0;
-      }
-      .stale-note {
-        margin: 0 0 10px;
-        color: #8c1d1d;
-        font-size: 12px;
-      }
-      .stale-note[hidden] {
-        display: none;
-      }
-      .table-hint {
-        display: none;
-        margin: 0 0 10px;
-      }
-      h2.section-title {
-        margin-bottom: 10px;
-      }
-      .export-menu summary {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        min-height: 44px;
-        padding: 10px 16px;
-        border-radius: 999px;
-        border: 1px solid var(--border-strong);
-        background: #fff;
-        color: #111;
-        font-size: 13px;
-        font-weight: 700;
-        list-style: none;
-        cursor: pointer;
-      }
-      .export-menu summary::after {
-        content: "";
-        width: 8px;
-        height: 8px;
-        border-right: 2px solid currentColor;
-        border-bottom: 2px solid currentColor;
-        transform: rotate(45deg);
-      }
-      .export-menu[open] summary::after {
-        transform: rotate(-135deg);
-      }
-      .export-menu > .muted {
-        margin: 8px 0 0;
-      }
-      .export-menu > a.ghost {
-        margin-top: 8px;
-      }
+      a.row-link:hover { text-decoration: underline; }
+      .grid { display: grid; gap: 14px; grid-template-columns: minmax(0, 1fr); }
+      .progress-badges { display: flex; gap: 6px; flex-wrap: wrap; }
+      .toast { position: fixed; bottom: 24px; right: 24px; background: #111827; color: #fff; padding: 12px 14px; border-radius: 12px; opacity: 0; transform: translateY(8px); pointer-events: none; transition: opacity .2s ease, transform .2s ease; }
+      .toast.show { opacity: 1; transform: translateY(0); }
+      .error-banner { display: grid; gap: 10px; border: 1px solid #fecdca; background: var(--bad-bg); color: var(--bad); border-radius: 14px; padding: 14px; font-size: 13px; }
+      .error-banner[hidden], .stale-note[hidden] { display: none; }
+      .error-banner p { margin: 0; }
+      .stale-note { margin: 0 0 10px; color: var(--bad); font-size: 12px; }
+      .table-hint { display: none; margin: 0 0 10px; }
+      h2.section-title { margin-bottom: 10px; }
+      .export-menu { position: relative; }
+      .export-menu summary { display: flex; align-items: center; gap: 8px; min-height: 44px; padding: 10px 14px; border-radius: 10px; border: 1px solid #cfd6e3; background: #fff; color: #111827; font-size: 13px; font-weight: 650; list-style: none; cursor: pointer; }
+      .export-menu summary::after { content: ""; width: 8px; height: 8px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: rotate(45deg); }
+      .export-menu[open] summary::after { transform: rotate(-135deg); }
+      .export-menu > .muted { margin: 8px 0 0; max-width: 320px; }
+      .export-menu > a.ghost { margin-top: 8px; width: 100%; justify-content: flex-start; }
       @media (max-width: 720px) {
-        header, main { padding: 16px; }
-        .actions { width: 100%; }
-        .actions > * { flex: 1 1 auto; }
-        .search-input { min-width: 180px; width: 100%; }
-        .users-tools { width: 100%; }
-        .phase-filters { width: 100%; overflow-x: auto; white-space: nowrap; padding-bottom: 2px; }
-        table { font-size: 12px; }
+        header.container { grid-template-columns: 1fr; align-items: stretch; padding: 20px 16px 12px; }
+        main { padding: 0 16px 32px; }
+        .actions, .users-tools { width: 100%; }
+        .actions > *, .users-tools > * { flex: 1 1 auto; min-width: 0; }
+        .search-input { min-width: 0; width: 100%; }
+        .phase-filters { width: 100%; max-width: 100%; overflow-x: auto; flex-wrap: nowrap; padding-bottom: 2px; }
         .table-hint { display: block; }
-        .card .value {
-          font-size: 18px;
-        }
+        .card .value { font-size: 20px; }
+        .toast { left: 16px; right: 16px; bottom: 16px; }
       }
       @media (max-width: 420px) {
         .stats, .phase-stats { grid-template-columns: 1fr; }
         .section-head { align-items: flex-start; }
-        .card .value { font-size: 17px; }
+        .card .value { font-size: 18px; }
       }
-      @media (prefers-reduced-motion: reduce) {
-        * { animation: none !important; transition: none !important; }
-      }
-    </style>
+      @media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }    </style>
   </head>
   <body>
     <header class="container">
@@ -2163,12 +2115,13 @@ function renderAdminDashboardPage() {
               <a class="ghost" href="/admin/settings">Pengaturan</a>
               <details class="export-menu">
                 <summary>Ekspor data (CSV)</summary>
-                <p class="muted">Isi setiap berkas adalah data seluruh user, termasuk nomor WhatsApp dan tanggal persalinan. Berkasi yang sudah diunduh bisa dibuka siapa pun yang memegangnya, jadi simpan di tempat yang aman.</p>
+                <p class="muted">Isi setiap berkas adalah data seluruh user, termasuk nomor WhatsApp dan tanggal persalinan. Berkas yang sudah diunduh bisa dibuka siapa pun yang memegangnya, jadi simpan di tempat yang aman.</p>
                 <a class="ghost" href="/admin/api/export/users.csv" download>Data user</a>
                 <a class="ghost" href="/admin/api/export/reminder_logs.csv" download>Catatan pengingat</a>
                 <a class="ghost" href="/admin/api/export/postpartum_logs.csv" download>Catatan nifas</a>
               </details>
               <form method="post" action="/admin/logout">
+                <input type="hidden" name="_csrf" value="${csrf}">
                 <button type="submit" class="ghost">Keluar</button>
               </form>
             </div>
@@ -2183,6 +2136,7 @@ function renderAdminDashboardPage() {
 
       <section id="stats-section">
         <h2 class="section-title">Ringkasan hari ini</h2>
+        <p class="status-line" id="stats-note" role="status" aria-live="polite">Memuat ringkasan hari ini.</p>
         <div class="stats">
           <div class="card"><div class="label">Total user</div><div class="value" id="stat-users-total">-</div></div>
           <div class="card"><div class="label">Aktif</div><div class="value" id="stat-users-active">-</div></div>
@@ -2222,7 +2176,7 @@ function renderAdminDashboardPage() {
         <p class="stale-note" id="users-note" hidden></p>
         <div class="table-wrap">
         <table>
-          <caption class="muted">Daftar user beserta fase, status pengingat, dan progress program. Nama user adalah tautan ke halaman detail dan bisa dibuka dengan Enter.</caption>
+          <caption class="muted">Daftar user beserta fase, status pengingat, dan progress program. Nama user adalah tautan ke halaman detail dan bisa dibuka dengan Enter atau Space.</caption>
           <thead>
             <tr>
               <th scope="col">Nama</th>
@@ -2270,7 +2224,7 @@ function renderAdminDashboardPage() {
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
 
-    <script>
+    <script nonce="${nonce}">
       const toast = document.getElementById('toast');
       function showToast(message) {
         toast.textContent = message;
@@ -2374,8 +2328,12 @@ function renderAdminDashboardPage() {
         }
         return wrap;
       }
+      const CSRF_TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+      function csrfHeaders(extra) {
+        return Object.assign({ 'X-CSRF-Token': CSRF_TOKEN }, extra || {});
+      }
       async function fetchJson(url) {
-        const res = await fetch(url, { headers: { 'Accept': 'application/json' } });
+        const res = await fetch(url, { headers: csrfHeaders({ 'Accept': 'application/json' }) });
         if (res.status === 401) {
           window.location.href = '/admin/login?expired=1';
           throw new Error('Sesi berakhir. Silakan masuk lagi.');
@@ -2439,11 +2397,7 @@ function renderAdminDashboardPage() {
         }
         for (const user of filtered) {
           const tr = document.createElement('tr');
-          tr.classList.add('row-clickable');
           tr.dataset.waId = user.wa_id;
-          tr.addEventListener('click', () => {
-            window.location.href = '/admin/users/' + encodeURIComponent(user.wa_id);
-          });
           const cells = [
             user.name,
             phaseLabel(classifyPhase(user)),
@@ -2456,8 +2410,10 @@ function renderAdminDashboardPage() {
             const td = document.createElement('td');
             if (index === 0) {
               const link = document.createElement('a');
+              link.className = 'row-link';
               link.href = '/admin/users/' + encodeURIComponent(user.wa_id);
               link.textContent = fmt(value);
+              td.classList.add('name-cell');
               td.appendChild(link);
             } else if (index === 1) {
               const badge = document.createElement('span');
@@ -2478,6 +2434,11 @@ function renderAdminDashboardPage() {
       }
       async function loadSummary() {
         const data = await fetchJson('/admin/api/summary');
+        const summaryNote = document.getElementById('stats-note');
+        if (summaryNote) {
+          summaryNote.dataset.tone = 'ok';
+          summaryNote.textContent = 'Ringkasan dimuat dari data terbaru.';
+        }
         document.getElementById('stat-users-total').textContent = fmt(data.users.total);
         document.getElementById('stat-users-active').textContent = fmt(data.users.active);
         document.getElementById('stat-users-paused').textContent = fmt(data.users.paused);
@@ -2496,7 +2457,7 @@ function renderAdminDashboardPage() {
         const tbody = document.getElementById('logs-body');
         tbody.innerHTML = '';
         if (!data.logs.length) {
-          tbody.innerHTML = '<tr><td colspan="6" class="muted">Belum ada log.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="6" class="muted">Belum ada catatan pengingat. Catatan muncul setelah bot mengirim pengingat pertama dan user menjawabnya.</td></tr>';
           return;
         }
         for (const log of data.logs) {
@@ -2521,6 +2482,10 @@ function renderAdminDashboardPage() {
       const errorBanner = document.getElementById('error-banner');
       const errorText = document.getElementById('error-text');
       function setPanelNote(id, text) {
+        const node0 = document.getElementById(id);
+        if (node0 && node0.id === 'stats-note' && text) {
+          node0.dataset.tone = 'bad';
+        }
         const node = document.getElementById(id);
         if (!node) return;
         if (text) {
@@ -2565,7 +2530,7 @@ function renderAdminDashboardPage() {
         const tasks = [
           { noteId: 'users-note', bodyId: 'users-body', run: loadUsers },
           { noteId: 'logs-note', bodyId: 'logs-body', run: loadLogs },
-          { noteId: null, bodyId: 'stats-section', run: loadSummary }
+          { noteId: 'stats-note', bodyId: 'stats-section', run: loadSummary }
         ];
         const results = await Promise.all(tasks.map((task) => loadPanel(task)));
         const failed = results.filter((result) => !result.ok);
@@ -2629,43 +2594,46 @@ function renderAdminDashboardPage() {
 </html>`;
 }
 
-function renderAdminUserDetailPage(waId) {
+function renderAdminUserDetailPage(waId, options = {}) {
+  const nonce = options && options.nonce ? String(options.nonce) : "";
+  const csrf = options && options.csrf ? String(options.csrf) : "";
   const safeWaId = escapeHtml(waId || "");
   return `<!doctype html>
 <html lang="id">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="csrf-token" content="${csrf}">
     <title>Detail User - RemindCare Admin</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700&display=swap" rel="stylesheet">
-    <style>
-      :root { --bg:#f7f7f7; --panel:#fff; --text:#0f0f0f; --muted:#666; --border:#e3e3e3; --border-strong:#8a8a8a; --shadow:0 8px 26px rgba(0,0,0,.06); }
-      *{box-sizing:border-box} body{margin:0;font-family:"Lato",sans-serif;background:linear-gradient(180deg,#fff 0%,#f4f4f4 100%);color:var(--text)}
-      .container{width:min(1080px,100%);margin:0 auto;padding:20px}
-      .top{display:flex;gap:10px;flex-wrap:wrap;align-items:center;justify-content:space-between}
-      .title{font-size:24px;font-weight:700;margin:0}
-      .muted{color:var(--muted);font-size:12px}
-      .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border-radius:10px;border:1px solid var(--border-strong);background:#fff;color:#111;text-decoration:none;font-size:13px;font-weight:700}
-      .panel{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;box-shadow:var(--shadow);margin-top:14px}
-      .panel-title{font-size:14px;font-weight:700;margin:0 0 10px}
+    <style nonce="${nonce}">
+      :root { --bg:#f8fafc; --panel:#fff; --text:#111827; --muted:#667085; --border:#cfd6e3; --border-strong:#7d8695; --control-border:#7d8695; --placeholder:#667085; --focus:#4f46e5; --accent:#4f46e5; --bad:#b42318; --shadow:0 14px 34px rgba(17,24,39,.07); }
+      *{box-sizing:border-box}
+      body{margin:0;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:var(--bg);color:var(--text)}
+      .container{width:min(1080px,100%);margin:0 auto;padding:24px}
+      .table-wrap,.table-wrap table{max-width:100%}
+      .top{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;justify-content:space-between}
+      .title{font-size:clamp(24px,3vw,32px);letter-spacing:-.04em;line-height:1.08;font-weight:760;margin:0}
+      .muted{color:var(--muted);font-size:12px;line-height:1.5}
+      .btn{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 14px;border-radius:10px;border:1px solid #cfd6e3;background:#fff;color:#111827;text-decoration:none;font-size:13px;font-weight:650}
+      .btn:hover{background:#f9fafb;border-color:var(--border-strong)}
+      .panel{background:var(--panel);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:var(--shadow);margin-top:14px}
+      .panel-title{font-size:15px;font-weight:760;margin:0 0 12px}
       .grid{display:grid;gap:12px;grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
-      .label{font-size:12px;color:var(--muted)} .value{font-size:18px;font-weight:700;margin-top:6px;overflow-wrap:anywhere}
-      table{width:100%;border-collapse:collapse;font-size:13px}
-      th,td{text-align:left;padding:10px;border-bottom:1px solid var(--border);vertical-align:top;overflow-wrap:anywhere}
-      th{background:#f2f2f2}
-      .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:12px}
+      .label{font-size:12px;color:var(--muted);font-weight:650}.value{font-size:19px;font-weight:760;margin-top:6px;overflow-wrap:anywhere;letter-spacing:-.02em}
+      .table-wrap{overflow:auto;border:1px solid var(--border);border-radius:14px;background:#fff}
+      table{width:100%;border-collapse:collapse;font-size:13px;min-width:620px}
+      caption{text-align:left;padding:10px 12px}
+      th,td{text-align:left;padding:11px 12px;border-bottom:1px solid #edf0f5;vertical-align:top;overflow-wrap:anywhere}
+      th{background:#f9fafb;color:#475467;font-weight:700}
       .pager{display:flex;gap:8px;align-items:center;justify-content:flex-end;margin-top:10px;flex-wrap:wrap}
-      .pager button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 12px;border-radius:8px;border:1px solid var(--border-strong);background:#fff;font-size:13px;font-family:inherit;cursor:pointer}
-      .pager button:disabled{color:var(--muted);cursor:default}
-      a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:2px solid #111;outline-offset:2px}
-      .stale-note{color:#8c1d1d;font-size:12px;margin:10px 0 0}
-      .stale-note:empty{display:none}
-      @media (max-width:720px){.container{padding:14px}.value{font-size:16px}.top{flex-direction:column;align-items:stretch}}
+      .pager button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 12px;border-radius:10px;border:1px solid #cfd6e3;background:#fff;font-size:13px;font-family:inherit;cursor:pointer}
+      .pager button:hover,.pager button:focus-visible{border-color:var(--border-strong)}
+      .pager button:disabled{color:var(--muted);cursor:default;background:#f9fafb}
+      a:focus-visible,button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--focus);outline-offset:2px}
+      .stale-note{color:var(--bad);font-size:12px;margin:10px 0 0}.stale-note:empty{display:none}
+      @media (max-width:720px){.container{padding:16px}.value{font-size:16px}.top{flex-direction:column;align-items:stretch}.top .top{flex-direction:row}.btn{flex:1 1 auto}.panel{padding:14px}}
       @media (max-width:420px){.grid{grid-template-columns:1fr}.pager{justify-content:space-between}}
-      @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}
-    </style>
+      @media (prefers-reduced-motion: reduce){*{animation:none !important;transition:none !important}}    </style>
   </head>
   <body>
     <div class="container">
@@ -2715,7 +2683,7 @@ function renderAdminUserDetailPage(waId) {
         </div>
       </div>
     </div>
-    <script>
+    <script nonce="${nonce}">
       const waId = ${escapeForScriptContext(waId || "")};
       let page = 0;
       const limit = 20;
@@ -2751,8 +2719,12 @@ function renderAdminUserDetailPage(waId) {
         const node = document.getElementById(id);
         if (node) node.setAttribute('aria-busy', busy ? 'true' : 'false');
       }
+      const CSRF_TOKEN = (document.querySelector('meta[name="csrf-token"]') || {}).content || '';
+      function csrfHeaders(extra) {
+        return Object.assign({ 'X-CSRF-Token': CSRF_TOKEN }, extra || {});
+      }
       async function fetchJson(url){
-        const r = await fetch(url,{headers:{Accept:'application/json'}});
+        const r = await fetch(url,{headers:csrfHeaders({Accept:'application/json'})});
         if (r.status === 401) { window.location.href = '/admin/login?expired=1'; throw new Error('Sesi berakhir'); }
         if (!r.ok) { const err = new Error('Permintaan gagal dengan kode ' + r.status); err.status = r.status; throw err; }
         return r.json();
@@ -2801,12 +2773,12 @@ function renderAdminUserDetailPage(waId) {
             ['Data selesai diisi', user.delivery_data_completed_at]
           ];
           const filledDeliveryRows = deliveryRows.filter((row) => row[1] !== null && row[1] !== undefined && row[1] !== '');
-          renderRows(document.getElementById('delivery-body'), filledDeliveryRows, (r)=>r, 'Belum ada data persalinan untuk user ini.', 2, true);
+          renderRows(document.getElementById('delivery-body'), filledDeliveryRows, (r)=>r, 'Belum ada data persalinan. Data terisi setelah user menjawab pertanyaan validasi persalinan di WhatsApp.', 2, true);
           renderRows(
             document.getElementById('pp-body'),
             data.postpartum_logs || [],
             (x)=>[x.visit_label || x.visit_code, x.response || 'Pending', fmtDt(x.response_at || x.sent_at || x.due_at)],
-            'Belum ada riwayat kunjungan nifas untuk user ini.',
+            'Belum ada riwayat kunjungan nifas. Baris muncul setelah jadwal KF atau KN pertama dikirim.',
             3,
             false
           );
@@ -2829,7 +2801,7 @@ function renderAdminUserDetailPage(waId) {
             document.getElementById('logs-body'),
             data.logs || [],
             (x)=>[x.reminder_date, x.response, x.response_sudah_count, x.response_belum_count, fmtDt(x.created_at)],
-            'Belum ada riwayat pengingat untuk user ini.',
+            'Belum ada riwayat pengingat untuk user ini. Riwayat terisi setelah pengingat pertama terkirim dan dijawab.',
             5,
             false
           );
@@ -3526,6 +3498,8 @@ async function initDb(db) {
   await ensureReminderLogColumns(db);
   await ensurePostpartumLogColumns(db);
   await migrateLegacyPostpartumVisitLogs(db);
+
+  await ensureAliasTable(db);
 }
 
 async function getUser(db, waId) {
@@ -3796,7 +3770,13 @@ function csvEscape(value) {
   if (value === null || value === undefined) {
     return "";
   }
-  const text = String(value);
+  let text = String(value);
+  // Excel, LibreOffice, dan Google Sheets mengeksekusi nilai yang diawali salah satu
+  // karakter ini sebagai formula. Isi dari percakapan WhatsApp bisa sampai ke CSV,
+  // jadi setiap nilai diberi awalan aman sebelum dikutip.
+  if (/^[=+\-@\t\r]/.test(text)) {
+    text = `'${text}`;
+  }
   if (/[",\n]/.test(text)) {
     return `"${text.replace(/"/g, '""')}"`;
   }
@@ -4659,6 +4639,58 @@ async function completeUserAfterFinalPostpartumVisit(db, client, user) {
   return true;
 }
 
+// Teks terjadwal di luar poll tidak punya kolom backoff sendiri. Supaya scheduler 30 detik
+// tidak menembak ulang aliran yang baru gagal, jeda percobaan disimpan per aliran di memori
+// proses. Ini bukan pengganti kolom persisten, hanya penahan retry cepat dalam satu proses.
+const flowAttempts = new Map();
+const FLOW_RETRY_MIN_MS = 15 * 60 * 1000;
+
+function flowKey(waId, flow) {
+  return `${waId}:${flow}`;
+}
+
+function canAttemptFlow(waId, flow, nowMs = Date.now()) {
+  const last = flowAttempts.get(flowKey(waId, flow));
+  if (!last) {
+    return true;
+  }
+  return nowMs - last >= FLOW_RETRY_MIN_MS;
+}
+
+function markFlowAttempt(waId, flow, nowMs = Date.now()) {
+  flowAttempts.set(flowKey(waId, flow), nowMs);
+  if (flowAttempts.size > 2000) {
+    const cutoff = nowMs - 24 * 60 * 60 * 1000;
+    for (const [key, ts] of flowAttempts.entries()) {
+      if (ts < cutoff) {
+        flowAttempts.delete(key);
+      }
+    }
+  }
+}
+
+// Satu titik untuk semua pengingat berbentuk teks: hitung kuota harian, hormati jeda
+// percobaan aliran, dan catat kuota hanya ketika benar-benar terkirim.
+async function sendReminderText(db, client, user, text, dateKey, now, flow = "reminder_text") {
+  if (isOverDailyMessageQuota(user, dateKey)) {
+    console.warn("Kuota pesan harian penuh untuk", user.wa_id, "aliran", flow);
+    return null;
+  }
+  if (!canAttemptFlow(user.wa_id, flow)) {
+    return null;
+  }
+  markFlowAttempt(user.wa_id, flow);
+  const sent = await sendText(client, user.wa_id, text);
+  if (!sent) {
+    return null;
+  }
+  noteScheduledSend(user.wa_id, dateKey);
+  if (now && now.toISO) {
+    console.log("Terkirim", flow, "ke", user.wa_id, "pada", now.toISO());
+  }
+  return sent;
+}
+
 async function sendPostpartumEducationIfNeeded(db, client, user, now) {
   if (
     !isPostpartumMonitoringActive(user) ||
@@ -4666,10 +4698,14 @@ async function sendPostpartumEducationIfNeeded(db, client, user, now) {
   ) {
     return false;
   }
-  const sent = await sendText(
+  const sent = await sendReminderText(
+    db,
     client,
-    user.wa_id,
+    user,
     buildPostpartumEducationMessage(user, now),
+    toDateKey(now),
+    now,
+    "postpartum_education",
   );
   if (!sent) {
     return false;
@@ -4819,22 +4855,45 @@ async function sendDailyPoll(db, client, user, now, options = {}) {
   if (!takeSendAttempt(user.wa_id, "fe_poll", dateKey)) {
     return false;
   }
-  if (!skipReminderText && user.last_reminder_text_date !== dateKey) {
-    const reminderText = buildReminderMessage(user, now);
-    const reminderSent = await sendText(client, user.wa_id, reminderText);
-    if (reminderSent) {
-      await updateUser(db, user.wa_id, { last_reminder_text_date: dateKey });
-    }
-  }
 
   // Setelah beberapa hari, pengingat berbentuk poll diturunkan frekuensinya: sebagian hari
   // cukup pesan teks. Jawaban teks tetap tercatat lewat jalur jawaban harian yang sudah ada.
+  // Keputusan poll dihitung SEBELUM pesan pertama dikirim, karena menghitungnya setelah
+  // pengiriman membuat hari mode teks mengirim pesan yang sama dua kali.
   const pollDaysLimit = Math.max(1, settingInt("poll_days_limit"));
   const programDay = getProgramDay(user, now);
   const usePoll =
     programDay === null || programDay <= pollDaysLimit || programDay % 2 === 0;
+
+  const reminderAlreadySentToday = user.last_reminder_text_date === dateKey;
+  if (!skipReminderText && !reminderAlreadySentToday) {
+    const reminderText = buildReminderMessage(user, now);
+    const reminderSent = await sendReminderText(db, client, user, reminderText, dateKey, now);
+    if (reminderSent) {
+      await updateUser(db, user.wa_id, { last_reminder_text_date: dateKey });
+    }
+    if (!usePoll) {
+      if (!reminderSent) {
+        return false;
+      }
+      await updateUser(db, user.wa_id, {
+        last_reminder_date: dateKey,
+        last_reminder_text_date: dateKey,
+      });
+      return true;
+    }
+  }
+
   if (!usePoll) {
-    const textOnly = await sendText(client, user.wa_id, buildReminderMessage(user, now));
+    // Hari mode teks tanpa pengiriman sebelumnya (misalnya jendela kirim baru terbuka).
+    const textOnly = await sendReminderText(
+      db,
+      client,
+      user,
+      buildReminderMessage(user, now),
+      dateKey,
+      now,
+    );
     if (!textOnly) {
       return false;
     }
@@ -4842,7 +4901,6 @@ async function sendDailyPoll(db, client, user, now, options = {}) {
       last_reminder_date: dateKey,
       last_reminder_text_date: dateKey,
     });
-    noteScheduledSend(user.wa_id, dateKey);
     return true;
   }
 
@@ -4859,9 +4917,11 @@ async function sendDailyPoll(db, client, user, now, options = {}) {
         ? Number(user.fe_poll_fail_count) + 1
         : 1;
     await updateUser(db, user.wa_id, {
+      last_reminder_date: dateKey,
       fe_poll_last_attempt_at: now.toISO(),
       fe_poll_fail_count: Math.min(cappedAttempts, MAX_SEND_ATTEMPTS),
     });
+    await ensureReminderLog(db, user.wa_id, dateKey);
     if (isPermanentSendFailure(user.wa_id)) {
       // Nomor tidak terdaftar atau diblokir: berhenti mencoba, jangan kirim berulang.
       await updateUser(db, user.wa_id, {
@@ -4898,11 +4958,18 @@ async function sendLaborPhaseMessage(db, client, user, now) {
   if (!phaseMessage) {
     return false;
   }
-  const sent = await sendText(client, user.wa_id, phaseMessage);
+  const sent = await sendReminderText(
+    db,
+    client,
+    user,
+    phaseMessage,
+    today,
+    now,
+    "labor_phase",
+  );
   if (!sent) {
     return false;
   }
-  noteScheduledSend(user.wa_id, today);
   await updateUser(db, user.wa_id, { last_labor_phase_message_date: today });
   return true;
 }
@@ -4928,7 +4995,15 @@ async function sendDeliveryValidationPoll(db, client, user, now, stage) {
       user.delivery_poll_intro_date !== today);
   if (shouldSendIntro) {
     const intro = buildDeliveryValidationMessage(user, now, stage);
-    const introSent = await sendText(client, user.wa_id, intro);
+    const introSent = await sendReminderText(
+      db,
+      client,
+      user,
+      intro,
+      today,
+      now,
+      `delivery_intro_${stage}`,
+    );
     if (introSent) {
       await updateUser(db, user.wa_id, {
         delivery_poll_intro_stage: stage,
@@ -5683,7 +5758,11 @@ async function handleMessage(db, client, msg) {
   }
 
   const text = msg.body ? msg.body.trim() : "";
-  const waId = msg.from;
+  const identity = await resolveSenderIdentity(db, client, msg);
+  const waId = identity.waId;
+  const rawWaId = identity.raw;
+  const alternates = identity.aliases;
+  rememberAlternates(waId, alternates);
   if (isUnsupportedDirectTarget(waId)) {
     return;
   }
@@ -5707,9 +5786,10 @@ async function handleMessage(db, client, msg) {
     return;
   }
 
+  const identityIds = [waId, rawWaId].filter(Boolean);
   const seed = {
-    is_admin: ADMIN_WA_IDS.has(waId),
-    is_allowed: ALLOWLIST_WA_IDS.has(waId),
+    is_admin: identityIds.some((id) => ADMIN_WA_IDS.has(id)),
+    is_allowed: identityIds.some((id) => ALLOWLIST_WA_IDS.has(id)),
   };
   const existingUser = await getUser(db, waId);
   if (
@@ -6255,18 +6335,26 @@ async function applyAdminUserAction(db, user, action, value) {
 // Pengaturan yang bisa diubah operator tanpa menyentuh kode dan tanpa restart.
 // Setiap kunci punya tipe dan rentang yang sah: nilai di luar rentang ditolak,
 // karena pengaturan yang salah justru bisa mematikan pengaman pengiriman.
+// Nilai fallback di bawah WAJIB membaca env yang sama dengan lapisan pengiriman.
+// Sebelumnya angka di sini ditulis tetap, sehingga nilai SEND_* di .env ditimpa
+// diam-diam saat start dan operator mengira sudah menurunkan kuota padahal belum.
+function envNumber(name, fallback) {
+  const raw = Number(process.env[name]);
+  return Number.isFinite(raw) && raw >= 0 ? raw : fallback;
+}
+
 const RUNTIME_SETTING_DEFS = {
-  send_window_start_hour: { type: "int", min: 0, max: 23, fallback: 6, guardKey: "windowStartHour" },
-  send_window_end_hour: { type: "int", min: 0, max: 23, fallback: 21, guardKey: "windowEndHour" },
-  send_window_end_minute: { type: "int", min: 0, max: 59, fallback: 30, guardKey: "windowEndMinute" },
-  send_min_gap_ms: { type: "int", min: 1500, max: 60000, fallback: 3500, guardKey: "minGapMs" },
-  send_jitter_ms: { type: "int", min: 0, max: 60000, fallback: 2500, guardKey: "jitterMs" },
-  send_max_per_minute: { type: "int", min: 1, max: 60, fallback: 12, guardKey: "maxPerMinute" },
-  send_max_per_hour: { type: "int", min: 1, max: 1000, fallback: 180, guardKey: "maxPerHour" },
-  send_max_per_day: { type: "int", min: 1, max: 5000, fallback: 900, guardKey: "maxPerDay" },
-  reminder_stale_after_minutes: { type: "int", min: 0, max: 720, fallback: 30 },
-  max_send_attempts: { type: "int", min: 1, max: 20, fallback: 4 },
-  reminder_log_retention_days: { type: "int", min: 7, max: 3650, fallback: 180 },
+  send_window_start_hour: { type: "int", min: 0, max: 23, fallback: envNumber("SEND_WINDOW_START_HOUR", 6), guardKey: "windowStartHour" },
+  send_window_end_hour: { type: "int", min: 0, max: 23, fallback: envNumber("SEND_WINDOW_END_HOUR", 21), guardKey: "windowEndHour" },
+  send_window_end_minute: { type: "int", min: 0, max: 59, fallback: envNumber("SEND_WINDOW_END_MINUTE", 30), guardKey: "windowEndMinute" },
+  send_min_gap_ms: { type: "int", min: 1500, max: 60000, fallback: envNumber("SEND_MIN_GAP_MS", 3500), guardKey: "minGapMs" },
+  send_jitter_ms: { type: "int", min: 0, max: 60000, fallback: envNumber("SEND_JITTER_MS", 2500), guardKey: "jitterMs" },
+  send_max_per_minute: { type: "int", min: 1, max: 60, fallback: envNumber("SEND_MAX_PER_MINUTE", 12), guardKey: "maxPerMinute" },
+  send_max_per_hour: { type: "int", min: 1, max: 1000, fallback: envNumber("SEND_MAX_PER_HOUR", 180), guardKey: "maxPerHour" },
+  send_max_per_day: { type: "int", min: 1, max: 5000, fallback: envNumber("SEND_MAX_PER_DAY", 900), guardKey: "maxPerDay" },
+  reminder_stale_after_minutes: { type: "int", min: 0, max: 720, fallback: envNumber("REMINDER_STALE_AFTER_MINUTES", 30) },
+  max_send_attempts: { type: "int", min: 1, max: 20, fallback: envNumber("MAX_SEND_ATTEMPTS", 4) },
+  reminder_log_retention_days: { type: "int", min: 7, max: 3650, fallback: envNumber("REMINDER_LOG_RETENTION_DAYS", 180) },
   enforce_allowlist: { type: "bool", fallback: ENFORCE_ALLOWLIST ? 1 : 0 },
   maintenance_mode: { type: "bool", fallback: 0 },
   dry_run: { type: "bool", fallback: 0 },
@@ -6447,17 +6535,85 @@ function startAdminServer(db) {
   }
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
+  const renderContext = (req, res) => ({
+    nonce: res.locals.nonce,
+    csrf: req.adminSession ? req.adminSession.csrf : "",
+  });
+
   app.use((req, res, next) => {
+    // Nonce dibuat per respons supaya script inline tetap diizinkan tanpa membuka
+    // 'unsafe-inline' pada Content-Security-Policy.
+    const nonce = crypto.randomBytes(16).toString("base64");
+    res.locals.nonce = nonce;
     res.setHeader("X-Frame-Options", "DENY");
     res.setHeader("X-Content-Type-Options", "nosniff");
     res.setHeader("Referrer-Policy", "no-referrer");
+    res.setHeader("Permissions-Policy", "camera=(), microphone=(), geolocation=()");
+    res.setHeader(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        `script-src 'self' 'nonce-${nonce}'`,
+        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+        "font-src 'self' https://fonts.gstatic.com data:",
+        "img-src 'self' data:",
+        "connect-src 'self'",
+        "object-src 'none'",
+        "base-uri 'none'",
+        "frame-ancestors 'none'",
+        "form-action 'self'",
+      ].join("; "),
+    );
+    if (ADMIN_WEB_COOKIE_SECURE) {
+      res.setHeader("Strict-Transport-Security", "max-age=31536000; includeSubDomains");
+    }
     next();
   });
 
 
+  const safeMethods = new Set(["GET", "HEAD", "OPTIONS"]);
+
+  // Semua permintaan yang mengubah keadaan wajib membawa token CSRF milik sesi.
+  // Cookie SameSite saja tidak cukup: browser tetap mengirim cookie pada permintaan
+  // yang dipicu halaman same-site lain, dan itu cukup untuk menjeda pengiriman bot.
+  const requireCsrf = (req, res, next) => {
+    if (safeMethods.has(String(req.method || "").toUpperCase())) {
+      return next();
+    }
+    const session = req.adminSession;
+    if (!session || !session.csrf) {
+      res.status(403).json({ ok: false, error: "csrf" });
+      return;
+    }
+    const sent = String(
+      (req.headers && req.headers["x-csrf-token"]) ||
+        (req.body && req.body._csrf) ||
+        "",
+    );
+    if (!sent || sent !== session.csrf) {
+      res.status(403).json({ ok: false, error: "csrf" });
+      return;
+    }
+    const origin = String((req.headers && req.headers.origin) || "");
+    if (origin) {
+      let originHost = "";
+      try {
+        originHost = new URL(origin).host;
+      } catch (err) {
+        originHost = "";
+      }
+      if (originHost && originHost !== req.headers.host) {
+        res.status(403).json({ ok: false, error: "origin" });
+        return;
+      }
+    }
+    return next();
+  };
+
   const requireAdmin = (req, res, next) => {
-    const token = getAdminSession(req);
-    if (token) {
+    const session = getAdminSession(req);
+    if (session) {
+      req.adminSession = session;
       return next();
     }
     const wantsJson =
@@ -6475,6 +6631,7 @@ function startAdminServer(db) {
     res.send(
       renderAdminLoginPage(
         expired ? "Sesi berakhir. Silakan masuk lagi." : "",
+        { nonce: res.locals.nonce },
       ),
     );
   });
@@ -6491,49 +6648,56 @@ function startAdminServer(db) {
         .send(
           renderAdminLoginPage(
             "Terlalu banyak percobaan masuk. Coba lagi beberapa menit lagi.",
+            { nonce: res.locals.nonce },
           ),
         );
       return;
     }
 
-    const usernameOk = !username || username === ADMIN_WEB_USER;
+    const usernameOk = username === ADMIN_WEB_USER;
     const passwordOk = await verifyAdminPassword(db, password, passwordConfig);
     if (!usernameOk || !passwordOk) {
       registerAdminLoginFailure(ip, username);
       res
         .status(401)
-        .send(renderAdminLoginPage("Username atau password salah."));
+        .send(
+          renderAdminLoginPage("Username atau password salah.", {
+            nonce: res.locals.nonce,
+          }),
+        );
       return;
     }
 
     clearAdminLoginFailures(ip);
-    const token = createAdminSession();
-    setAdminCookie(res, token);
+    const session = createAdminSession();
+    setAdminCookie(res, session.token);
     res.redirect("/admin");
   });
 
-  app.post("/admin/logout", requireAdmin, (req, res) => {
+  app.post("/admin/logout", requireAdmin, requireCsrf, (req, res) => {
+    destroyAdminSession(req.adminSession ? req.adminSession.token : null);
     clearAdminCookie(res);
     res.redirect("/admin/login");
   });
 
   app.get("/admin", requireAdmin, (req, res) => {
-    res.send(renderAdminDashboardPage());
+    res.send(renderAdminDashboardPage(renderContext(req, res)));
   });
 
   app.get("/admin/settings", requireAdmin, (req, res) => {
-    res.send(renderAdminSettingsPage());
+    res.send(renderAdminSettingsPage(renderContext(req, res)));
   });
 
   app.get("/admin/api/settings", requireAdmin, async (req, res) => {
     try {
       res.json({ ok: true, settings: settingsSnapshot() });
     } catch (err) {
-      res.status(500).json({ ok: false, error: err.message });
+      console.error("Kesalahan pada API admin:", err);
+      res.status(500).json({ ok: false, error: "failed" });
     }
   });
 
-  app.post("/admin/api/settings", requireAdmin, async (req, res) => {
+  app.post("/admin/api/settings", requireAdmin, requireCsrf, async (req, res) => {
     try {
       const result = await saveRuntimeSettings(db, req.body || {});
       res.json({
@@ -6543,7 +6707,8 @@ function startAdminServer(db) {
         settings: settingsSnapshot(),
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: err.message });
+      console.error("Kesalahan pada API admin:", err);
+      res.status(500).json({ ok: false, error: "failed" });
     }
   });
 
@@ -6572,11 +6737,12 @@ function startAdminServer(db) {
         serverTime: nowWib().toISO(),
       });
     } catch (err) {
-      res.status(500).json({ ok: false, error: err.message });
+      console.error("Kesalahan pada API admin:", err);
+      res.status(500).json({ ok: false, error: "failed" });
     }
   });
 
-  app.post("/admin/api/emergency", requireAdmin, async (req, res) => {
+  app.post("/admin/api/emergency", requireAdmin, requireCsrf, async (req, res) => {
     try {
       const action = String((req.body && req.body.action) || "");
       const hours = Number((req.body && req.body.hours) || 24);
@@ -6614,11 +6780,12 @@ function startAdminServer(db) {
       }
       res.status(400).json({ ok: false, error: "Aksi darurat tidak dikenal" });
     } catch (err) {
-      res.status(500).json({ ok: false, error: err.message });
+      console.error("Kesalahan pada API admin:", err);
+      res.status(500).json({ ok: false, error: "failed" });
     }
   });
 
-  app.post("/admin/api/users/:waId/actions", requireAdmin, async (req, res) => {
+  app.post("/admin/api/users/:waId/actions", requireAdmin, requireCsrf, async (req, res) => {
     try {
       const waId = String(req.params.waId || "").trim();
       if (!/^[0-9A-Za-z@._:-]{3,64}$/.test(waId)) {
@@ -6639,7 +6806,8 @@ function startAdminServer(db) {
       }
       res.json(outcome);
     } catch (err) {
-      res.status(500).json({ ok: false, error: err.message });
+      console.error("Kesalahan pada API admin:", err);
+      res.status(500).json({ ok: false, error: "failed" });
     }
   });
 
@@ -6650,7 +6818,7 @@ function startAdminServer(db) {
       res.status(400).send("Invalid user");
       return;
     }
-    res.send(renderAdminUserDetailPage(waId));
+    res.send(renderAdminUserDetailPage(waId, renderContext(req, res)));
   });
 
   app.get("/admin/api/summary", requireAdmin, async (req, res) => {
@@ -7235,6 +7403,26 @@ if (require.main === module) {
 
 module.exports = {
   pairingOptions,
+  // jembatan uji: hanya untuk menguji siklus hidup sesi admin tanpa membuka server
+  __createAdminSessionForTest: createAdminSession,
+  __destroyAdminSessionForTest: destroyAdminSession,
+  __peekAdminSessionForTest: (token) => (token ? adminSessions.get(token) || null : null),
+  renderAdminLoginPage,
+  renderAdminDashboardPage,
+  renderAdminUserDetailPage,
+  isRealSentMessage,
+  chatIdCandidates,
+  deliverMessage,
+  rememberAlternates,
+  ensureAliasTable,
+  getCanonicalWaId,
+  recordAlias,
+  getAlternateChatIds,
+  resolveSenderIdentity,
+  canAttemptFlow,
+  markFlowAttempt,
+  sendReminderText,
+  envNumber,
   parseYesNo,
   normalizeTimeInput,
   parseHpht,
