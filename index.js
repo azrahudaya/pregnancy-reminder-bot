@@ -807,7 +807,7 @@ function checkRateLimit(waId) {
 
 function getDisplayName(user) {
   const rawName = user && user.name ? String(user.name).trim() : "";
-  return rawName ? rawName : "Bunda";
+  return rawName ? rawName : "Ibu";
 }
 
 function getTimeGreeting(now) {
@@ -1056,7 +1056,7 @@ function buildUserInfoMessage(user, postpartumLogs, now = nowWib()) {
           "wait",
           `Sedang isi data persalinan (tahap ${deliveryStep} dari ${DELIVERY_QUESTIONS.length})`,
         )
-      : withStatusIcon("done", "Data persalinan tidak sedang diisi");
+      : withStatusIcon("wait", "Data persalinan tidak sedang diisi");
 
   const accountStatusLabel = getReminderStatusLabel(user);
   const accountStatusText =
@@ -1470,6 +1470,13 @@ function chatIdCandidates(chatId, alternates) {
   const list = [chatId];
   for (const alt of Array.isArray(alternates) ? alternates : []) {
     if (typeof alt === "string" && alt && !list.includes(alt)) {
+      // @lid hanyalah identitas perangkat sementara untuk chat yang sama. Kalau
+      // target utama sudah @c.us (nomor asli), kirim ke @lid akan menghasilkan
+      // pesan dobel. @lid hanya dipakai sebagai cadangan saat target utama adalah
+      // @lid (fallback ke nomor asli).
+      if (chatId.endsWith("@c.us") && alt.endsWith("@lid")) {
+        continue;
+      }
       list.push(alt);
     }
   }
@@ -1488,6 +1495,21 @@ async function deliverMessage(resolved, chatId, payload, alternates) {
     } catch (err) {
       console.warn("Kirim gagal ke", target, ":", err && err.message ? err.message : err);
       continue;
+    }
+    if (!isRealSentMessage(result)) {
+      // DEBUG: pahami kenapa hasil kirim dianggap kosong.
+      const rawId =
+        result && result.id
+          ? String(result.id._serialized || result.id.id || JSON.stringify(result.id))
+          : String(result);
+      console.warn(
+        "[DEBUG-SEND] target=",
+        target,
+        " resultType=",
+        result === undefined ? "undefined" : result === null ? "null" : typeof result,
+        " rawId=",
+        rawId,
+      );
     }
     if (isRealSentMessage(result)) {
       if (target !== chatId) {
@@ -1839,9 +1861,6 @@ function renderAdminLoginPage(message, options = {}) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Masuk - RemindCare Admin</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style nonce="${nonce}">${ADMIN_CSS}
       main.login { min-height: 100dvh; display: grid; place-items: center; padding: 20px; }
       .login-card { width: 100%; max-width: 360px; }
@@ -1888,9 +1907,6 @@ function renderAdminDashboardPage(options = {}) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="${csrf}">
     <title>RemindCare Admin</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style nonce="${nonce}">${ADMIN_CSS}
       .kv.kv-6 > div { border-top: none; }
       .modes { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 12px; }
@@ -2392,9 +2408,6 @@ function renderAdminUserDetailPage(waId, options = {}) {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="csrf-token" content="${csrf}">
     <title>Detail user - RemindCare Admin</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
     <style nonce="${nonce}">${ADMIN_CSS}
       .kv.kv-3 > div { border-top: none; }
       .pager { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
@@ -2409,7 +2422,7 @@ function renderAdminUserDetailPage(waId, options = {}) {
       </div>
       <div class="row">
         <a class="btn" href="/admin">${icon("chevron")}Daftar user</a>
-        <a class="btn" href="/admin/api/users/${encodeURIComponent(waId || "")}/export.csv" download>${icon("download")}CSV</a>
+        ${waId ? `<a class="btn" href="/admin/api/users/${encodeURIComponent(waId)}/export.csv" download>${icon("download")}CSV</a>` : ""}
       </div>
     </header>
 
@@ -5279,6 +5292,44 @@ async function handleOnboardingAnswer(db, client, user, text) {
     }
     updates.hpht = parsed.raw;
     updates.hpht_iso = parsed.iso;
+  } else if (question.field === "name") {
+    const nameValue = text.trim();
+    const lower = nameValue.toLowerCase();
+    const blockedWords = [
+      "start", "mulai", "menu", "help", "info", "informasi", "about",
+      "batal", "cancel", "delete", "hapus", "halo", "hai", "hi", "hey",
+      "website", "stop", "berhenti", "ubah", "reset", "edit",
+    ];
+    if (nameValue.length < 2 || nameValue.length > 40) {
+      await sendText(
+        client,
+        user.wa_id,
+        "Nama terlalu pendek atau terlalu panjang. Ketik nama Ibu (2 sampai 40 huruf) ya.",
+      );
+      return;
+    }
+    if (blockedWords.includes(lower) || lower.startsWith("ubah jam")) {
+      await sendText(
+        client,
+        user.wa_id,
+        "Itu kelihatannya perintah, bukan nama. Ketik nama Ibu ya.",
+      );
+      return;
+    }
+    updates[question.field] = nameValue;
+  } else if (question.field === "age" || question.field === "pregnancy_number") {
+    const num = Number(text.trim());
+    const min = question.field === "age" ? 15 : 1;
+    const max = question.field === "age" ? 60 : 15;
+    if (!Number.isInteger(num) || num < min || num > max) {
+      await sendText(
+        client,
+        user.wa_id,
+        `Jawab dengan angka ${min} sampai ${max} ya.`,
+      );
+      return;
+    }
+    updates[question.field] = String(num);
   } else {
     updates[question.field] = text.trim();
   }
@@ -6444,6 +6495,8 @@ function startAdminServer(db) {
   }
   app.use(express.urlencoded({ extended: false }));
   app.use(express.json());
+  // Font self-host supaya panel admin tidak bergantung pada Google Fonts.
+  app.use("/assets", express.static(path.join(__dirname, "assets")));
   const renderContext = (req, res) => ({
     nonce: res.locals.nonce,
     csrf: req.adminSession ? req.adminSession.csrf : "",
@@ -6463,8 +6516,8 @@ function startAdminServer(db) {
       [
         "default-src 'self'",
         `script-src 'self' 'nonce-${nonce}'`,
-        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
-        "font-src 'self' https://fonts.gstatic.com data:",
+        "style-src 'self' 'unsafe-inline'",
+        "font-src 'self' data:",
         "img-src 'self' data:",
         "connect-src 'self'",
         "object-src 'none'",
