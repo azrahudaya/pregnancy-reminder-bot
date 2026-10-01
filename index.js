@@ -526,6 +526,34 @@ async function getAlternateChatIds(db, waId) {
   return alternates;
 }
 
+// Muat seluruh pemetaan alias dari DB ke cache memori saat boot. Cache ini dipakai
+// pengiriman terjadwal supaya pesan ke identitas @lid (yang sendMessage-nya sering
+// mengembalikan hasil kosong) tetap punya alamat cadangan tanpa menunggu pesan masuk.
+async function loadAliasCache(db) {
+  const rows = await dbAll(db, "SELECT alias, canonical FROM user_aliases");
+  const byWaId = new Map();
+  for (const row of rows || []) {
+    if (!row || !row.alias || !row.canonical) {
+      continue;
+    }
+    if (!byWaId.has(row.canonical)) {
+      byWaId.set(row.canonical, []);
+    }
+    if (!byWaId.get(row.canonical).includes(row.alias)) {
+      byWaId.get(row.canonical).push(row.alias);
+    }
+    if (!byWaId.has(row.alias)) {
+      byWaId.set(row.alias, []);
+    }
+    if (!byWaId.get(row.alias).includes(row.canonical)) {
+      byWaId.get(row.alias).push(row.canonical);
+    }
+  }
+  for (const [waId, alternates] of byWaId) {
+    rememberAlternates(waId, alternates);
+  }
+}
+
 // Ubah alamat pengirim pesan menjadi satu identitas kanonik. Nomor asli dari kontak
 // dipakai lebih dulu karena alamat @lid hanya berlaku untuk sesi perangkat.
 async function resolveSenderIdentity(db, client, msg) {
@@ -3232,6 +3260,7 @@ async function initDb(db) {
   await migrateLegacyPostpartumVisitLogs(db);
 
   await ensureAliasTable(db);
+  await loadAliasCache(db);
   await reconcileRunnableUsers(db);
 }
 
@@ -7289,6 +7318,7 @@ module.exports = {
   getCanonicalWaId,
   recordAlias,
   getAlternateChatIds,
+  loadAliasCache,
   resolveSenderIdentity,
   canAttemptFlow,
   markFlowAttempt,
