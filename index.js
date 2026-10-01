@@ -427,6 +427,16 @@ async function initClientWithRetry(client, attempt = 1) {
       console.error("Menyerah menginisialisasi WhatsApp. Periksa sesi dan jaringan.");
       return;
     }
+    // Percobaan gagal bisa meninggalkan browser yang masih memegang userDataDir,
+    // sehingga retry bentrok "browser is already running". Tutup dulu sebelum coba lagi.
+    try {
+      await client.destroy();
+    } catch (destroyErr) {
+      console.warn(
+        "Gagal menutup browser setelah init gagal:",
+        destroyErr && destroyErr.message ? destroyErr.message : destroyErr,
+      );
+    }
     const delayMs = Math.min(15 * 60 * 1000, 30000 * 2 ** (attempt - 1));
     setTimeout(() => initClientWithRetry(client, attempt + 1), delayMs);
   }
