@@ -146,6 +146,11 @@ const adminSessions = new Map();
 const deleteConfirmState = new Map();
 const editConfirmState = new Map();
 const ACTION_CONFIRM_WINDOW_MS = 5 * 60 * 1000;
+// WhatsApp Web bisa mengirim event message yang sama dua kali saat sesi reconnect
+// (binding halaman ter-inject dua kali). Simpan id pesan yang sudah diproses sebentar
+// supaya balasan bot tidak terkirim dobel.
+const processedMessageIds = new Map();
+const PROCESSED_MESSAGE_TTL_MS = 5 * 60 * 1000;
 
 const QUESTIONS = [
   { field: "name", text: "Halo, aku RemindCare. Boleh tahu nama Ibu? \u{1F60A}" },
@@ -5582,11 +5587,35 @@ async function handleDailyResponse(db, client, user, response) {
   }
 }
 
+function isDuplicateMessage(msgId) {
+  if (!msgId) {
+    return false;
+  }
+  const nowMs = Date.now();
+  const lastSeen = processedMessageIds.get(msgId);
+  if (lastSeen && nowMs - lastSeen < PROCESSED_MESSAGE_TTL_MS) {
+    return true;
+  }
+  processedMessageIds.set(msgId, nowMs);
+  if (processedMessageIds.size > 2000) {
+    for (const [id, ts] of processedMessageIds) {
+      if (nowMs - ts >= PROCESSED_MESSAGE_TTL_MS) {
+        processedMessageIds.delete(id);
+      }
+    }
+  }
+  return false;
+}
+
 async function handleMessage(db, client, msg) {
   if (msg.fromMe) {
     return;
   }
   if (msg.from.endsWith("@g.us") || msg.isStatus) {
+    return;
+  }
+  const msgId = msg && msg.id ? String(msg.id._serialized || "") : "";
+  if (isDuplicateMessage(msgId)) {
     return;
   }
 
@@ -7252,6 +7281,7 @@ module.exports = {
   renderAdminDashboardPage,
   renderAdminUserDetailPage,
   isRealSentMessage,
+  isDuplicateMessage,
   chatIdCandidates,
   deliverMessage,
   rememberAlternates,
