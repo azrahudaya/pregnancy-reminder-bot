@@ -208,6 +208,72 @@ async function run2() {
     assert.ok(sent.some((m) => /angka hari/.test(m.body)), JSON.stringify(sent));
   });
 
+  await test("kepatuhan 7 hari dihitung dari catatan pengingat nyata", async () => {
+    const hariIni = new Date().toISOString().slice(0, 10);
+    const kemarin = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    // Kepatuhan hanya menghitung pasien, jadi akun admin dan pasiennya dibuat eksplisit.
+    for (const wa of ["6285700000003@c.us", "6285700000004@c.us", "6285700000005@c.us"]) {
+      await run(
+        db,
+        `INSERT OR REPLACE INTO users (wa_id, name, status, onboarding_step, is_admin, is_allowed,
+          is_blocked, allow_remindcare, reminder_time, created_at, updated_at)
+         VALUES (?, 'Pasien Uji', 'active', 9, 0, 1, 0, 1, '19:00', ?, ?)`,
+        [wa, nowIso, nowIso],
+      );
+    }
+    await run(
+      db,
+      `INSERT OR REPLACE INTO reminder_logs (wa_id, reminder_date, response, created_at)
+       VALUES (?, ?, 'Sudah', ?)`,
+      [ADMIN, hariIni, new Date().toISOString()],
+    );
+    await run(
+      db,
+      `INSERT OR REPLACE INTO reminder_logs (wa_id, reminder_date, response, created_at)
+       VALUES ('6285700000003@c.us', ?, 'Sudah', ?)`,
+      [hariIni, new Date().toISOString()],
+    );
+    await run(
+      db,
+      `INSERT OR REPLACE INTO reminder_logs (wa_id, reminder_date, response, created_at)
+       VALUES ('6285700000004@c.us', ?, 'Belum', ?)`,
+      [hariIni, new Date().toISOString()],
+    );
+    await run(
+      db,
+      `INSERT OR REPLACE INTO reminder_logs (wa_id, reminder_date, response, created_at)
+       VALUES ('6285700000005@c.us', ?, NULL, ?)`,
+      [kemarin, new Date().toISOString()],
+    );
+    const mingguan = await mod.getWeeklyAdherence(db, 7);
+    assert.strictEqual(mingguan.length, 7, "harus tujuh baris hari");
+    const hariTerakhir = mingguan[6];
+    assert.strictEqual(hariTerakhir.date, hariIni);
+    assert.strictEqual(hariTerakhir.sent, 2, "baris admin tidak ikut dihitung");
+    assert.strictEqual(hariTerakhir.answered, 2);
+    assert.strictEqual(hariTerakhir.sudah, 1);
+    assert.strictEqual(hariTerakhir.belum, 1);
+    assert.strictEqual(hariTerakhir.percent, 100);
+    const hariKemarin = mingguan[5];
+    assert.strictEqual(hariKemarin.sent, 1);
+    assert.strictEqual(hariKemarin.answered, 0);
+    assert.strictEqual(hariKemarin.percent, 0);
+    const hariSepi = mingguan[0];
+    assert.strictEqual(hariSepi.sent, 0);
+    assert.strictEqual(hariSepi.percent, null, "hari tanpa pengingat bukan 0 persen");
+  });
+
+  await test("ringkasan mingguan memuat angka nyata dan tidak mengarang", async () => {
+    const teks = await mod.buildWeeklyDigest(
+      db,
+      require("luxon").DateTime.now().setZone("Asia/Jakarta"),
+    );
+    assert.ok(/Ringkasan RemindCare/.test(teks), teks);
+    assert.ok(/Pengingat terkirim minggu ini: \d+/.test(teks), teks);
+    assert.ok(!/\u2014/.test(teks), "tidak boleh ada em dash");
+    assert.ok(!/undefined|NaN/.test(teks), teks);
+  });
+
   await test("denyut proses ditulis dan memuat kesiapan sesi", async () => {
     const payload = mod.writeHeartbeat({ phase: "uji" });
     const file = path.join(DATA_DIR, "heartbeat.json");

@@ -2173,6 +2173,15 @@ function renderAdminDashboardPage(options = {}) {
       .note.ok { color: var(--ok); }
       .access-form { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
       .access-form .field { flex: 1 1 190px; }
+      .week-table { width: 100%; border-collapse: collapse; }
+      .week-table th, .week-table td { padding: 7px 12px; text-align: left; border-top: 1px solid var(--line); }
+      .week-table thead th { border-top: none; color: var(--muted); font-weight: 600; }
+      .week-table th.num, .week-table td.num { text-align: right; font-variant-numeric: tabular-nums; }
+      .week-table tbody tr.is-today td { font-weight: 600; }
+      .week-table td.bar { width: 34%; }
+      .week-bar { display: block; height: 8px; margin-top: 4px; border-radius: var(--r-1); background: var(--line); overflow: hidden; }
+      .week-bar span { display: block; height: 100%; background: var(--ok); }
+      .week-bar.is-none span { background: var(--line-strong); }
     </style>
   </head>
   <body>
@@ -2247,6 +2256,31 @@ function renderAdminDashboardPage(options = {}) {
           <div class="metric"><div class="k">Dijawab belum</div><div class="v" id="today-belum">-</div></div>
           <div class="metric"><div class="k">User tidak berjalan</div><div class="v" id="today-blocked">-</div></div>
         </div>
+      </section>
+
+      <section class="panel" aria-labelledby="week-title">
+        <div class="panel-head">
+          <h2 id="week-title">${icon("pulse")}Kepatuhan 7 hari</h2>
+          <span class="badge" id="week-badge">memuat</span>
+        </div>
+        <div class="table-wrap">
+          <table class="week-table">
+            <thead>
+              <tr>
+                <th scope="col">Tanggal</th>
+                <th scope="col" class="num">Terkirim</th>
+                <th scope="col" class="num">Dijawab</th>
+                <th scope="col" class="num">Sudah</th>
+                <th scope="col" class="num">Belum</th>
+                <th scope="col">Persen dijawab</th>
+              </tr>
+            </thead>
+            <tbody id="week-body" aria-busy="true">
+              <tr><td colspan="6" class="muted">Memuat.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="note" id="week-note" role="status" aria-live="polite" style="padding:10px 12px 12px;margin:0">Angka diambil dari catatan pengingat. Hari tanpa catatan tampil sebagai nol.</p>
       </section>
 
       <section class="panel" aria-labelledby="users-title">
@@ -2533,6 +2567,64 @@ function renderAdminDashboardPage(options = {}) {
         setText('today-belum', fmt(rem.todayBelum));
         setText('today-blocked', fmt(users.total === undefined ? '-' : users.total - (users.runnable || 0)));
       }
+      function renderWeek() {
+        const tbody = document.getElementById('week-body');
+        tbody.setAttribute('aria-busy', 'false');
+        const rows = (summaryCache && summaryCache.weekly) || [];
+        const badge = document.getElementById('week-badge');
+        tbody.innerHTML = '';
+        if (!rows.length) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 6;
+          td.className = 'muted';
+          td.textContent = 'Belum ada catatan pengingat.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+          badge.textContent = 'kosong';
+          return;
+        }
+        const totalTerkirim = rows.reduce((sum, row) => sum + row.sent, 0);
+        const totalDijawab = rows.reduce((sum, row) => sum + row.answered, 0);
+        badge.textContent = totalTerkirim > 0
+          ? Math.round((totalDijawab / totalTerkirim) * 100) + '% dijawab'
+          : 'belum ada pengingat';
+        const hariTerakhir = rows[rows.length - 1].date;
+        for (const row of rows) {
+          const tr = document.createElement('tr');
+          if (row.date === hariTerakhir) tr.className = 'is-today';
+          const tanggal = document.createElement('td');
+          tanggal.textContent = row.date;
+          tr.appendChild(tanggal);
+          for (const angka of [row.sent, row.answered, row.sudah, row.belum]) {
+            const td = document.createElement('td');
+            td.className = 'num';
+            td.textContent = String(angka);
+            tr.appendChild(td);
+          }
+          const sel = document.createElement('td');
+          sel.className = 'bar';
+          if (row.percent === null) {
+            const kosong = document.createElement('span');
+            kosong.className = 'muted';
+            kosong.textContent = 'tidak ada pengingat';
+            sel.appendChild(kosong);
+          } else {
+            const teks = document.createElement('div');
+            teks.textContent = row.percent + ' persen';
+            const bar = document.createElement('span');
+            bar.className = row.percent === 0 ? 'week-bar is-none' : 'week-bar';
+            bar.setAttribute('aria-hidden', 'true');
+            const isi = document.createElement('span');
+            isi.style.width = row.percent + '%';
+            bar.appendChild(isi);
+            sel.appendChild(teks);
+            sel.appendChild(bar);
+          }
+          tr.appendChild(sel);
+          tbody.appendChild(tr);
+        }
+      }
       function phaseCounts() {
         const counts = { onboarding: 0, kehamilan: 0, persalinan: 0, pasca_kehamilan: 0 };
         for (const user of usersCache) counts[classifyPhase(user)] += 1;
@@ -2781,13 +2873,17 @@ function renderAdminDashboardPage(options = {}) {
         btn.disabled = true;
         const results = await Promise.all([
           guard('status-note', async () => { healthCache = await fetchJson('/admin/api/health'); renderStatus(); }),
-          guard('action-note', async () => { summaryCache = await fetchJson('/admin/api/summary'); renderToday(); renderActions(); }),
+          guard('action-note', async () => { summaryCache = await fetchJson('/admin/api/summary'); renderToday(); renderWeek(); renderActions(); }),
           guard('users-note', async () => { const d = await fetchJson('/admin/api/users'); usersCache = d.users || []; renderUsers(); }),
           guard('logs-note', async () => { const d = await fetchJson('/admin/api/logs'); logsCache = d.logs || []; renderLogs(); }),
           guard('access-status', async () => { const d = await fetchJson('/admin/api/allowlist'); accessCache = { panel: d.panel || [], env: d.env || [] }; renderAccess(); }),
         ]);
         if (!results[1].ok) {
           // Tanpa ini panel Perlu tindakan berhenti di "Memuat." tanpa sebab yang terlihat.
+          const weekBody = document.getElementById('week-body');
+          weekBody.setAttribute('aria-busy', 'false');
+          weekBody.innerHTML = '<tr><td colspan="6" class="muted">Ringkasan gagal dimuat. Klik Muat ulang untuk mencoba lagi.</td></tr>';
+          document.getElementById('week-badge').textContent = 'gagal';
           const list = document.getElementById('action-list');
           list.innerHTML = '';
           const li = document.createElement('li');
@@ -4247,6 +4343,86 @@ function buildNeedsAction(users) {
   return items;
 }
 
+// Kepatuhan dihitung dari catatan pengingat, bukan dari ingatan atau taksiran. Hari tanpa
+// catatan tetap ditampilkan sebagai nol supaya operator tahu bedanya "tidak ada jawaban"
+// dengan "tidak ada pengingat".
+async function getWeeklyAdherence(db, days = 7) {
+  const jumlahHari = Math.max(1, Math.min(31, Number(days) || 7));
+  const mulai = toDateKey(nowWib().minus({ days: jumlahHari - 1 }));
+  const rows = await dbAll(
+    db,
+    `SELECT r.reminder_date AS reminder_date,
+            COUNT(*) AS sent,
+            SUM(CASE WHEN r.response IS NOT NULL THEN 1 ELSE 0 END) AS answered,
+            SUM(CASE WHEN r.response = 'Sudah' THEN 1 ELSE 0 END) AS sudah,
+            SUM(CASE WHEN r.response = 'Belum' THEN 1 ELSE 0 END) AS belum
+     FROM reminder_logs r
+     JOIN users u ON u.wa_id = r.wa_id
+     WHERE r.reminder_date >= ? AND u.is_admin = 0
+     GROUP BY r.reminder_date`,
+    [mulai],
+  );
+  const peta = new Map(rows.map((row) => [String(row.reminder_date), row]));
+  const hasil = [];
+  for (let i = jumlahHari - 1; i >= 0; i -= 1) {
+    const date = toDateKey(nowWib().minus({ days: i }));
+    const row = peta.get(date);
+    const sent = row ? Number(row.sent || 0) : 0;
+    const answered = row ? Number(row.answered || 0) : 0;
+    hasil.push({
+      date,
+      sent,
+      answered,
+      sudah: row ? Number(row.sudah || 0) : 0,
+      belum: row ? Number(row.belum || 0) : 0,
+      percent: sent > 0 ? Math.round((answered / sent) * 100) : null,
+    });
+  }
+  return hasil;
+}
+
+// Ringkasan mingguan untuk operator. Angka diambil dari basis data, tidak ada yang
+// ditaksir, dan kalau tidak ada data sama sekali itu dinyatakan apa adanya.
+async function buildWeeklyDigest(db, now) {
+  const mingguan = await getWeeklyAdherence(db, 7);
+  const totalTerkirim = mingguan.reduce((sum, hari) => sum + hari.sent, 0);
+  const totalDijawab = mingguan.reduce((sum, hari) => sum + hari.answered, 0);
+  const totalSudah = mingguan.reduce((sum, hari) => sum + hari.sudah, 0);
+  const totalBelum = mingguan.reduce((sum, hari) => sum + hari.belum, 0);
+  const persen = totalTerkirim > 0 ? Math.round((totalDijawab / totalTerkirim) * 100) : null;
+  const aktif = await dbGet(
+    db,
+    "SELECT COUNT(*) AS count FROM users WHERE status = 'active' AND is_admin = 0",
+  );
+  const onboarding = await dbGet(
+    db,
+    "SELECT COUNT(*) AS count FROM users WHERE status = 'onboarding' AND is_admin = 0",
+  );
+  const ringkasan = await getAdminSummary(db);
+  const perluDihubungi = ringkasan.needsAction.filter((item) => item.reason === "no_answer");
+  const gagalKirim = ringkasan.needsAction.filter((item) => item.reason === "send_failure");
+  const awal = now.minus({ days: 6 }).setLocale("id");
+  const akhir = now.setLocale("id");
+  const baris = [
+    `Ringkasan RemindCare ${awal.toFormat("d LLLL")} sampai ${akhir.toFormat("d LLLL yyyy")}`,
+    `Pasien aktif: ${aktif ? aktif.count : 0}`,
+    `Pendataan belum selesai: ${onboarding ? onboarding.count : 0}`,
+    `Pengingat terkirim minggu ini: ${totalTerkirim}`,
+    totalTerkirim > 0
+      ? `Dijawab: ${totalDijawab} dari ${totalTerkirim} (${persen} persen). Sudah minum ${totalSudah}, belum ${totalBelum}.`
+      : "Belum ada pengingat yang tercatat minggu ini.",
+    `Tidak menjawab 3 hari terakhir: ${perluDihubungi.length} nomor`,
+    `Gagal kirim beruntun: ${gagalKirim.length} nomor`,
+  ];
+  if (perluDihubungi.length > 0) {
+    baris.push("Nomor yang perlu dihubungi:");
+    for (const item of perluDihubungi.slice(0, 10)) {
+      baris.push(`- ${item.name || item.wa_id}: ${item.detail}`);
+    }
+  }
+  return baris.join("\n");
+}
+
 async function getAdminSummary(db) {
   const total = await dbGet(db, "SELECT COUNT(*) as count FROM users");
   const active = await dbGet(
@@ -4320,6 +4496,7 @@ async function getAdminSummary(db) {
       date: today,
     },
     needsAction: buildNeedsAction(actionRows),
+    weekly: await getWeeklyAdherence(db, 7),
   };
 }
 
@@ -6949,12 +7126,35 @@ async function runDailyFollowUps(db, client, now, today) {
       `${silent.length} pasien tidak menjawab pengingat dalam ${SILENT_USER_DAYS} hari terakhir: ${silent.join(", ")}`,
     );
   }
-  if (nudged > 0 || silent.length > 0) {
+  // Ringkasan mingguan tiap Senin supaya bidan tidak perlu membuka panel untuk tahu
+  // keadaan seminggu terakhir.
+  let digestTerkirim = false;
+  const digestAktif = String(process.env.WEEKLY_DIGEST_ENABLED || "1") !== "0";
+  if (client && digestAktif && now.weekday === 1) {
+    try {
+      const terakhir = await getSetting(db, "last_weekly_digest_date");
+      if (String(terakhir || "") !== today) {
+        const teks = await buildWeeklyDigest(db, now);
+        for (const adminId of ADMIN_WA_IDS) {
+          const target = String(adminId);
+          if (target.endsWith("@c.us")) {
+            await sendText(client, target, teks, { kind: "digest" });
+          }
+        }
+        await setSetting(db, "last_weekly_digest_date", today);
+        digestTerkirim = true;
+      }
+    } catch (err) {
+      console.error("Gagal mengirim ringkasan mingguan:", err);
+    }
+  }
+
+  if (nudged > 0 || silent.length > 0 || digestTerkirim) {
     console.log(
-      `Tindak lanjut harian: ${nudged} dorongan pendataan, ${silent.length} pasien perlu dihubungi.`,
+      `Tindak lanjut harian: ${nudged} dorongan pendataan, ${silent.length} pasien perlu dihubungi, ringkasan mingguan ${digestTerkirim ? "terkirim" : "tidak dikirim"}.`,
     );
   }
-  return { nudged, stuck, silent };
+  return { nudged, stuck, silent, digestTerkirim };
 }
 
 async function startReminderLoop(db, client) {
@@ -8431,6 +8631,8 @@ module.exports = {
   sendAlert,
   writeHeartbeat,
   runDailyFollowUps,
+  getWeeklyAdherence,
+  buildWeeklyDigest,
   __handleMessageForTest: handleMessage,
   __handleAdminCommandForTest: handleAdminCommand,
   __setSendReadyForTest: (value) => {

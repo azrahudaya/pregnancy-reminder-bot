@@ -103,6 +103,30 @@ sudo systemctl restart remindcare-bot
 pgrep -a -f chrome-linux64/chrome | grep -c -- "--no-sandbox"   # harus 0
 ```
 
+## Ringkasan mingguan untuk operator
+
+Tiap Senin di dalam jam kirim, bot mengirim satu pesan ringkasan ke nomor di `ADMIN_WA_IDS`:
+jumlah pasien aktif, pendataan yang belum selesai, pengingat terkirim seminggu, berapa yang
+dijawab beserta persentasenya, dan daftar nomor yang tidak menjawab 3 hari terakhir. Angka
+diambil dari catatan pengingat, akun admin tidak ikut dihitung, dan kalau belum ada data
+pesannya menyatakannya apa adanya. Matikan dengan `WEEKLY_DIGEST_ENABLED=0`.
+
+Tanggal kirim terakhir disimpan di tabel `settings` pada kunci `last_weekly_digest_date`,
+jadi restart bot tidak membuat ringkasan terkirim dua kali.
+
+## Uji klik panel admin
+
+Selain `npm test`, ada uji klik memakai Chrome sungguhan lewat Playwright:
+
+```bash
+pip install playwright && playwright install chrome   # sekali saja
+npm run test:ui
+```
+
+Skripnya membangun pratinjau halaman admin dengan jaringan yang dimock, lalu memeriksa
+tombol, state muat/kosong/gagal, aria-busy, dan tampilan 390 px. Bukti yang dihasilkan
+71 pemeriksaan di empat berkas.
+
 ## Alarm di luar WhatsApp
 
 Alarm dari dalam bot dikirim ke tiga jalur: webhook, Telegram, dan WhatsApp admin. Jalur
