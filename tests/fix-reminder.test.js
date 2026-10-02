@@ -43,6 +43,47 @@ async function run() {
     assert.strictEqual(mod.sentMessageId({ id: { fromMe: true, remote: "204930287689898@lid" } }), "");
   });
 
+  await test("daftar akses panel mengizinkan nomor tanpa menyentuh berkas .env", async () => {
+    const db = memoryDb();
+    const waId = "628999111222@c.us";
+    try {
+      await mod.ensureAllowedNumbersTable(db);
+      assert.strictEqual(mod.isAllowlistedIdentity([waId]), false);
+      await mod.addPanelAllowedNumber(db, waId, "bidan desa", "panel", "admin");
+      assert.strictEqual(mod.isPanelAllowedNumber(waId), true);
+      assert.strictEqual(mod.isAllowlistedIdentity([waId]), true);
+      assert.deepStrictEqual(mod.listPanelAllowedNumbers(), [
+        { wa_id: waId, note: "bidan desa", source: "panel", created_at: mod.listPanelAllowedNumbers()[0].created_at, created_by: "admin" },
+      ]);
+      const reloaded = await mod.loadAllowedNumbers(db);
+      assert.strictEqual(reloaded, 1);
+      assert.strictEqual(await mod.removePanelAllowedNumber(db, waId), true);
+      assert.strictEqual(mod.isPanelAllowedNumber(waId), false);
+      assert.strictEqual(mod.isAllowlistedIdentity([waId]), false);
+    } finally {
+      await mod.removePanelAllowedNumber(db, waId).catch(() => {});
+      db.close();
+    }
+  });
+
+  await test("normalizeOperatorNumber menyeragamkan nomor yang diketik operator", () => {
+    assert.strictEqual(mod.normalizeOperatorNumber("0812-3456-7890"), "6281234567890@c.us");
+    assert.strictEqual(mod.normalizeOperatorNumber(" 6281234567890 "), "6281234567890@c.us");
+    assert.strictEqual(mod.normalizeOperatorNumber("6281234567890@c.us"), "6281234567890@c.us");
+    assert.strictEqual(mod.normalizeOperatorNumber("123"), null);
+    assert.strictEqual(mod.normalizeOperatorNumber(""), null);
+    assert.strictEqual(mod.normalizeOperatorNumber("nomor bidan"), null);
+  });
+
+  await test("dashboard admin memuat panel akses nomor", () => {
+    const html = mod.renderAdminDashboardPage({ nonce: "n", csrf: "c" });
+    assert.ok(html.includes("Akses nomor"));
+    assert.ok(html.includes('id="access-form"'));
+    assert.ok(html.includes('id="access-body"'));
+    assert.ok(html.includes('id="access-count"'));
+    assert.ok(html.includes("/admin/api/allowlist"));
+  });
+
   await test("resolveSenderIdentity memetakan @lid ke nomor walau kontak tidak terbaca", async () => {
     const db = memoryDb();
     try {

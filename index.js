@@ -512,6 +512,98 @@ async function recordAlias(db, alias, canonical) {
   );
 }
 
+// Nomor yang boleh memakai RemindCare datang dari dua sumber: berkas .env yang dibaca
+// saat start, dan daftar di DB yang diubah dari panel admin tanpa restart. Daftar DB
+// disimpan di memori karena gerbang allowlist dicek pada setiap pesan masuk.
+const panelAllowedNumbers = new Map();
+
+async function ensureAllowedNumbersTable(db) {
+  await dbRun(
+    db,
+    `CREATE TABLE IF NOT EXISTS allowed_numbers (
+      wa_id TEXT PRIMARY KEY,
+      note TEXT,
+      source TEXT NOT NULL DEFAULT 'panel',
+      created_at TEXT,
+      created_by TEXT
+    )`,
+  );
+}
+
+async function loadAllowedNumbers(db) {
+  const rows = await dbAll(
+    db,
+    "SELECT wa_id, note, source, created_at, created_by FROM allowed_numbers",
+  );
+  panelAllowedNumbers.clear();
+  for (const row of rows || []) {
+    panelAllowedNumbers.set(String(row.wa_id), {
+      note: row.note || "",
+      source: row.source || "panel",
+      created_at: row.created_at || "",
+      created_by: row.created_by || "",
+    });
+  }
+  return panelAllowedNumbers.size;
+}
+
+function isPanelAllowedNumber(waId) {
+  return panelAllowedNumbers.has(String(waId || ""));
+}
+
+function listPanelAllowedNumbers() {
+  return [...panelAllowedNumbers.entries()].map(([wa_id, meta]) => ({ wa_id, ...meta }));
+}
+
+// Operator hanya perlu melihat nomor yang bisa dibaca ulang, bukan alamat perangkat.
+function listEnvAllowedNumbers() {
+  return [...ALLOWLIST_WA_IDS].filter((waId) => String(waId).endsWith("@c.us")).sort();
+}
+
+function isAllowlistedIdentity(identityIds) {
+  return (identityIds || []).some(
+    (id) => ALLOWLIST_WA_IDS.has(id) || isPanelAllowedNumber(id),
+  );
+}
+
+// Operator menulis nomor apa adanya, termasuk bentuk 08xx, jadi nomor diseragamkan
+// ke format WhatsApp sebelum disimpan.
+function normalizeOperatorNumber(input) {
+  const digits = String(input || "").replace(/\D/g, "");
+  if (!digits) {
+    return null;
+  }
+  const withCountry = digits.startsWith("0") ? `62${digits.slice(1)}` : digits;
+  if (!/^\d{8,15}$/.test(withCountry)) {
+    return null;
+  }
+  return `${withCountry}@c.us`;
+}
+
+async function addPanelAllowedNumber(db, waId, note, source, createdBy) {
+  const nowIso = nowWib().toISO();
+  await dbRun(
+    db,
+    `INSERT INTO allowed_numbers (wa_id, note, source, created_at, created_by)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(wa_id) DO UPDATE SET
+       note = COALESCE(excluded.note, allowed_numbers.note),
+       source = excluded.source`,
+    [waId, note || null, source || "panel", nowIso, createdBy || null],
+  );
+  panelAllowedNumbers.set(String(waId), {
+    note: note || "",
+    source: source || "panel",
+    created_at: nowIso,
+    created_by: createdBy || "",
+  });
+}
+
+async function removePanelAllowedNumber(db, waId) {
+  await dbRun(db, "DELETE FROM allowed_numbers WHERE wa_id = ?", [waId]);
+  return panelAllowedNumbers.delete(String(waId));
+}
+
 // Alamat cadangan untuk pengiriman: kalau alamat asal @lid gagal, coba nomor aslinya,
 // dan sebaliknya. Daftar ini dibaca dari alias yang pernah tercatat.
 async function getAlternateChatIds(db, waId) {
@@ -1954,6 +2046,9 @@ function renderAdminDashboardPage(options = {}) {
     <style nonce="${nonce}">${ADMIN_CSS}
       .kv.kv-6 > div { border-top: none; }
       .modes { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 12px 12px; }
+      .note.ok { color: var(--ok); }
+      .access-form { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; }
+      .access-form .field { flex: 1 1 190px; }
     </style>
   </head>
   <body>
@@ -2064,6 +2159,44 @@ function renderAdminDashboardPage(options = {}) {
         </div>
       </section>
 
+      <section class="panel" aria-labelledby="access-title">
+        <div class="panel-head">
+          <h2 id="access-title">${icon("shield")}Akses nomor</h2>
+          <span class="badge" id="access-mode">memuat</span>
+        </div>
+        <div class="panel-body">
+          <form id="access-form" class="access-form">
+            <div class="field">
+              <label for="access-number">Nomor WhatsApp</label>
+              <input id="access-number" name="wa_id" type="text" inputmode="numeric" autocomplete="off" placeholder="6281234567890" required>
+            </div>
+            <div class="field">
+              <label for="access-note">Catatan</label>
+              <input id="access-note" name="note" type="text" maxlength="80" placeholder="opsional">
+            </div>
+            <button type="submit" class="btn-primary" id="access-submit">${icon("shield")}Izinkan nomor</button>
+          </form>
+          <p class="note" id="access-status" role="status" aria-live="polite" hidden style="margin:10px 0 0"></p>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <caption id="access-count">memuat</caption>
+            <thead>
+              <tr>
+                <th scope="col">Nomor</th>
+                <th scope="col">Sumber</th>
+                <th scope="col">Catatan</th>
+                <th scope="col">Ditambahkan</th>
+                <th scope="col">Aksi</th>
+              </tr>
+            </thead>
+            <tbody id="access-body" aria-busy="true">
+              <tr><td colspan="5" class="muted">Memuat.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
       <section class="panel" aria-labelledby="logs-title">
         <div class="panel-head">
           <h2 id="logs-title">${icon("list")}Catatan pengingat</h2>
@@ -2143,6 +2276,7 @@ function renderAdminDashboardPage(options = {}) {
       let logsOpen = false;
       let phaseFilter = 'all';
       let keyword = '';
+      let accessCache = null;
 
       function renderStatus() {
         const health = healthCache || {};
@@ -2177,6 +2311,9 @@ function renderAdminDashboardPage(options = {}) {
           [runtime.enforce_allowlist ? 'Allowlist aktif' : 'Allowlist mati', runtime.enforce_allowlist ? 'badge' : 'badge badge-warn'],
         ];
         for (const [label, tone2] of mods) chips.appendChild(badge(tone2, label));
+        const modeBadge = document.getElementById('access-mode');
+        modeBadge.className = runtime.enforce_allowlist ? 'badge' : 'badge badge-warn';
+        modeBadge.textContent = runtime.enforce_allowlist ? 'Allowlist aktif' : 'Allowlist mati';
         const note = document.getElementById('status-note');
         if (health.alert) {
           note.hidden = false;
@@ -2341,6 +2478,115 @@ function renderAdminDashboardPage(options = {}) {
           tbody.appendChild(tr);
         }
       }
+      function setAccessStatus(text, tone) {
+        const node = document.getElementById('access-status');
+        node.className = tone === 'ok' ? 'note ok' : 'note';
+        node.textContent = text || '';
+        node.hidden = !text;
+      }
+      function renderAccess() {
+        const data = accessCache || { panel: [], env: [] };
+        const tbody = document.getElementById('access-body');
+        const rows = (data.panel || [])
+          .map((entry) => ({ wa_id: entry.wa_id, source: 'panel', note: entry.note, created_at: entry.created_at }))
+          .concat((data.env || []).map((waId) => ({ wa_id: waId, source: 'env', note: '', created_at: '' })));
+        tbody.innerHTML = '';
+        tbody.setAttribute('aria-busy', 'false');
+        setText('access-count', rows.length + ' nomor dilayani. Alamat perangkat (@lid) ikut dicocokkan tapi tidak ditampilkan.');
+        if (!rows.length) {
+          const tr = document.createElement('tr');
+          const td = document.createElement('td');
+          td.colSpan = 5;
+          td.className = 'muted';
+          td.textContent = 'Belum ada nomor tambahan dari panel.';
+          tr.appendChild(td);
+          tbody.appendChild(tr);
+          return;
+        }
+        for (const row of rows) {
+          const tr = document.createElement('tr');
+          const numberCell = document.createElement('td');
+          numberCell.className = 'num';
+          numberCell.textContent = row.wa_id;
+          tr.appendChild(numberCell);
+          const sourceCell = document.createElement('td');
+          sourceCell.appendChild(
+            badge(row.source === 'panel' ? 'badge badge-accent' : 'badge', row.source === 'panel' ? 'panel' : 'berkas .env'),
+          );
+          tr.appendChild(sourceCell);
+          const noteCell = document.createElement('td');
+          noteCell.textContent = row.note ? row.note : '-';
+          tr.appendChild(noteCell);
+          const dateCell = document.createElement('td');
+          dateCell.className = 'num';
+          dateCell.textContent = row.created_at ? fmtDt(row.created_at) : '-';
+          tr.appendChild(dateCell);
+          const actionCell = document.createElement('td');
+          if (row.source === 'panel') {
+            const btn = document.createElement('button');
+            btn.type = 'button';
+            btn.className = 'btn';
+            btn.textContent = 'Cabut';
+            btn.setAttribute('aria-label', 'Cabut akses untuk ' + row.wa_id);
+            btn.addEventListener('click', () => confirmRemoveAccess(row.wa_id, btn));
+            actionCell.appendChild(btn);
+          } else {
+            actionCell.className = 'muted';
+            actionCell.textContent = 'di berkas .env';
+          }
+          tr.appendChild(actionCell);
+          tbody.appendChild(tr);
+        }
+      }
+      // fetchJson biasa membuang isi pesan galat, sedangkan di sini pesan server
+      // justru bagian penting (contoh format nomor), jadi badan respons dibaca sendiri.
+      async function postAccess(payload) {
+        const res = await fetch('/admin/api/allowlist/actions', {
+          method: 'POST',
+          headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+          body: JSON.stringify(payload),
+        });
+        let data = null;
+        try { data = await res.json(); } catch (err) { data = null; }
+        if (res.status === 401) { window.location.href = '/admin/login?expired=1'; throw new Error('Sesi berakhir'); }
+        if (!res.ok || !data || !data.ok) {
+          throw new Error((data && data.error) || ('kode ' + res.status));
+        }
+        accessCache = { panel: data.panel || [], env: data.env || [] };
+        renderAccess();
+        return data;
+      }
+      // Mencabut akses langsung memutus layanan ke user, jadi klik pertama hanya mengubah label.
+      function confirmRemoveAccess(waId, button) {
+        if (button.dataset.armed !== '1') {
+          button.dataset.armed = '1';
+          button.textContent = 'Yakin cabut?';
+          clearTimeout(button.armTimer);
+          button.armTimer = setTimeout(() => {
+            button.dataset.armed = '0';
+            button.textContent = 'Cabut';
+          }, 5000);
+          return;
+        }
+        button.disabled = true;
+        postAccess({ action: 'remove', wa_id: waId })
+          .then((res) => {
+            if (res.from_env) {
+              setAccessStatus(waId + ' dihapus dari daftar panel. Nomor ini masih ada di berkas .env, jadi aksesnya tetap berlaku.', 'ok');
+            } else if (res.revoked) {
+              setAccessStatus(waId + ' dihapus dan aksesnya dicabut. Pengingat untuk nomor ini dijeda.', 'ok');
+            } else {
+              setAccessStatus(waId + ' dihapus dari daftar panel.', 'ok');
+            }
+            showToast('Nomor dihapus');
+          })
+          .catch((err) => setAccessStatus('Gagal mencabut: ' + err.message, 'error'))
+          .finally(() => {
+            button.disabled = false;
+            button.dataset.armed = '0';
+            button.textContent = 'Cabut';
+          });
+      }
       function renderLogs() {
         const list = document.getElementById('logs-body');
         const limit = logsOpen ? 50 : 10;
@@ -2411,6 +2657,7 @@ function renderAdminDashboardPage(options = {}) {
           guard('users-note', async () => { summaryCache = await fetchJson('/admin/api/summary'); renderToday(); renderActions(); }),
           guard('users-note', async () => { const d = await fetchJson('/admin/api/users'); usersCache = d.users || []; renderUsers(); }),
           guard('logs-note', async () => { const d = await fetchJson('/admin/api/logs'); logsCache = d.logs || []; renderLogs(); }),
+          guard('access-status', async () => { const d = await fetchJson('/admin/api/allowlist'); accessCache = { panel: d.panel || [], env: d.env || [] }; renderAccess(); }),
         ]);
         const failed = results.filter((r) => !r.ok);
         if (failed.length) {
@@ -2423,6 +2670,30 @@ function renderAdminDashboardPage(options = {}) {
         }
         btn.disabled = false;
       }
+      document.getElementById('access-form').addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const form = event.currentTarget;
+        const button = document.getElementById('access-submit');
+        const numberInput = document.getElementById('access-number');
+        const noteInput = document.getElementById('access-note');
+        button.disabled = true;
+        try {
+          const res = await postAccess({ action: 'add', wa_id: numberInput.value, note: noteInput.value });
+          form.reset();
+          numberInput.focus();
+          setAccessStatus(
+            res.already
+              ? res.wa_id + ' sudah ada di daftar, tidak ada perubahan.'
+              : res.wa_id + ' diizinkan. Minta dia kirim pesan ke bot supaya pendataannya jalan.',
+            'ok',
+          );
+          showToast('Nomor diizinkan');
+        } catch (err) {
+          setAccessStatus('Gagal menambah: ' + err.message, 'error');
+        } finally {
+          button.disabled = false;
+        }
+      });
       document.getElementById('refresh-btn').addEventListener('click', () => loadAll(true));
       document.getElementById('error-retry').addEventListener('click', () => loadAll(true));
       document.getElementById('logs-toggle').addEventListener('click', () => { logsOpen = !logsOpen; renderLogs(); });
@@ -3328,6 +3599,8 @@ async function initDb(db) {
 
   await ensureAliasTable(db);
   await loadAliasCache(db);
+  await ensureAllowedNumbersTable(db);
+  await loadAllowedNumbers(db);
   await reconcileRunnableUsers(db);
 }
 
@@ -4120,6 +4393,8 @@ async function handleAdminCommand(db, client, user, text) {
     if (action === "allow") {
       updates.is_allowed = 1;
       updates.is_blocked = 0;
+      // Nomor baru langsung masuk daftar panel supaya tidak perlu mengedit .env lalu restart.
+      await addPanelAllowedNumber(db, targetUser.wa_id, null, "wa", user.wa_id);
     } else if (action === "block") {
       updates.is_blocked = 1;
     } else if (action === "unblock") {
@@ -4127,7 +4402,8 @@ async function handleAdminCommand(db, client, user, text) {
     }
 
     await updateUser(db, targetUser.wa_id, updates);
-    await sendText(client, user.wa_id, `OK ${action} ${targetUser.wa_id}. ✅`);
+    const tail = action === "allow" ? " Nomor masuk daftar akses." : "";
+    await sendText(client, user.wa_id, `OK ${action} ${targetUser.wa_id}.${tail} ✅`);
     return true;
   }
 
@@ -5785,7 +6061,7 @@ async function handleMessage(db, client, msg) {
   const identityIds = [waId, rawWaId].filter(Boolean);
   const seed = {
     is_admin: identityIds.some((id) => ADMIN_WA_IDS.has(id)),
-    is_allowed: identityIds.some((id) => ALLOWLIST_WA_IDS.has(id)),
+    is_allowed: isAllowlistedIdentity(identityIds),
   };
   const existingUser = await getUser(db, waId);
   if (
@@ -6817,6 +7093,76 @@ function startAdminServer(db) {
     }
   });
 
+  app.get("/admin/api/allowlist", requireAdmin, async (req, res) => {
+    try {
+      res.json({ ok: true, panel: listPanelAllowedNumbers(), env: listEnvAllowedNumbers() });
+    } catch (err) {
+      console.error("Kesalahan pada API admin:", err);
+      res.status(500).json({ ok: false, error: "failed" });
+    }
+  });
+
+  app.post("/admin/api/allowlist/actions", requireAdmin, requireCsrf, async (req, res) => {
+    try {
+      const action = String((req.body && req.body.action) || "");
+      if (action !== "add" && action !== "remove") {
+        res.status(400).json({ ok: false, error: "Aksi tidak dikenal" });
+        return;
+      }
+      const waId = normalizeOperatorNumber(req.body ? req.body.wa_id : "");
+      if (!waId) {
+        res.status(400).json({
+          ok: false,
+          error: "Format nomor tidak sah. Contoh: 6281234567890 atau 08123456789.",
+        });
+        return;
+      }
+      const fromEnv = ALLOWLIST_WA_IDS.has(waId);
+      if (action === "add") {
+        const already = isPanelAllowedNumber(waId);
+        if (!already) {
+          const note = String((req.body && req.body.note) || "").trim().slice(0, 80);
+          await addPanelAllowedNumber(db, waId, note, "panel", ADMIN_WEB_USER);
+        }
+        res.json({
+          ok: true,
+          action,
+          wa_id: waId,
+          already: already || fromEnv,
+          from_env: fromEnv,
+          panel: listPanelAllowedNumbers(),
+          env: listEnvAllowedNumbers(),
+        });
+        return;
+      }
+      const existed = isPanelAllowedNumber(waId);
+      await removePanelAllowedNumber(db, waId);
+      // Akses lama ikut dicabut supaya orangnya benar-benar berhenti dilayani. Nomor yang
+      // masih terdaftar di berkas .env tidak bisa dicabut dari panel.
+      let revoked = false;
+      if (!fromEnv) {
+        const target = await getUser(db, waId);
+        if (target && target.is_allowed && !target.is_admin) {
+          await updateUser(db, waId, { is_allowed: 0, allow_remindcare: 0, status: "paused" });
+          revoked = true;
+        }
+      }
+      res.json({
+        ok: true,
+        action,
+        wa_id: waId,
+        existed,
+        revoked,
+        from_env: fromEnv,
+        panel: listPanelAllowedNumbers(),
+        env: listEnvAllowedNumbers(),
+      });
+    } catch (err) {
+      console.error("Kesalahan pada API admin:", err);
+      res.status(500).json({ ok: false, error: "failed" });
+    }
+  });
+
   app.get("/admin/users/:waId", requireAdmin, (req, res) => {
     const waId = String(req.params.waId || "").trim();
     // Nilai ini masuk ke HTML dan blok script halaman detail, jadi formatnya dibatasi.
@@ -7423,6 +7769,15 @@ module.exports = {
   deliverMessage,
   rememberAlternates,
   ensureAliasTable,
+  ensureAllowedNumbersTable,
+  loadAllowedNumbers,
+  isPanelAllowedNumber,
+  listPanelAllowedNumbers,
+  listEnvAllowedNumbers,
+  isAllowlistedIdentity,
+  normalizeOperatorNumber,
+  addPanelAllowedNumber,
+  removePanelAllowedNumber,
   getCanonicalWaId,
   recordAlias,
   getAlternateChatIds,
