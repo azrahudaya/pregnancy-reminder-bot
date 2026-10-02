@@ -43,6 +43,33 @@ async function run() {
     assert.strictEqual(mod.sentMessageId({ id: { fromMe: true, remote: "204930287689898@lid" } }), "");
   });
 
+  await test("resolveSenderIdentity memetakan @lid ke nomor walau kontak tidak terbaca", async () => {
+    const db = memoryDb();
+    try {
+      await mod.ensureAliasTable(db);
+      await new Promise((resolve, reject) =>
+        db.run("CREATE TABLE IF NOT EXISTS users (wa_id TEXT PRIMARY KEY, is_allowed INTEGER DEFAULT 0)", (err) =>
+          err ? reject(err) : resolve(),
+        ),
+      );
+      const client = {
+        pupPage: {
+          evaluate: async () => "6285794961470@c.us",
+        },
+      };
+      const msg = { from: "15620980617398@lid", getContact: async () => ({ number: "" }) };
+      const identity = await mod.resolveSenderIdentity(db, client, msg);
+      assert.strictEqual(identity.waId, "6285794961470@c.us");
+      assert.deepStrictEqual(identity.aliases, ["15620980617398@lid"]);
+      assert.strictEqual(
+        await mod.getCanonicalWaId(db, "15620980617398@lid"),
+        "6285794961470@c.us",
+      );
+    } finally {
+      db.close();
+    }
+  });
+
   await test("chatIdCandidates menyusun target unik dan memakai alamat ingatan", () => {
     const first = mod.chatIdCandidates("204930287689898@lid", ["6282240269818@c.us", "6282240269818@c.us"]);
     assert.deepStrictEqual(first, ["204930287689898@lid", "6282240269818@c.us"]);

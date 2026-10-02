@@ -590,14 +590,40 @@ async function resolveSenderIdentity(db, client, msg) {
     console.warn("Gagal membaca kontak untuk pemetaan identitas:", err.message);
   }
   if (!numberId) {
+    numberId = await resolveNumberIdFromPage(client, raw);
+  }
+  if (!numberId) {
     return { raw, waId: raw, aliases: [] };
   }
-  const canonicalUser = await getUser(db, numberId);
-  if (!canonicalUser) {
-    return { raw, waId: raw, aliases: [numberId] };
-  }
+  // Nomor asli dipakai sebagai identitas kanonik, termasuk saat barisnya belum ada:
+  // pemetaan ini yang membuat allowlist berbasis nomor tetap bekerja untuk pengirim @lid.
   await recordAlias(db, raw, numberId);
   return { raw, waId: numberId, aliases: [raw] };
+}
+
+// Sebagian build WhatsApp Web tidak mengisi nomor di objek pesan, jadi pemetaan
+// alamat perangkat (@lid) ke nomor diselesaikan di sisi halaman yang masih punya data kontak.
+async function resolveNumberIdFromPage(client, waId) {
+  const page = client && client.pupPage ? client.pupPage : null;
+  if (!page || typeof page.evaluate !== "function") {
+    return null;
+  }
+  try {
+    const resolved = await page.evaluate(async (id) => {
+      try {
+        const contact = await window.WWebJS.getContact(id);
+        const target = contact && contact.id ? contact.id : null;
+        return target ? String(target._serialized || target) : "";
+      } catch (err) {
+        return "";
+      }
+    }, waId);
+    const value = resolved ? String(resolved) : "";
+    return value.endsWith("@c.us") ? value : null;
+  } catch (err) {
+    console.warn("Gagal memetakan alamat perangkat ke nomor:", err.message);
+    return null;
+  }
 }
 
 function parseWaIdList(raw) {
