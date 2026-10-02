@@ -1442,9 +1442,27 @@ function previewOf(value, fallback = "[pesan]") {
 // cocok dengan pesan tersimpan dan membuat sistem mengira poll sudah terkirim.
 // Id asli WhatsApp selalu memuat alamat JID (misalnya "true_62812...@c.us_3EB0...").
 // Nilai lain dianggap bukan bukti pengiriman, sehingga tidak boleh dicatat sebagai terkirim.
+// WhatsApp Web versi sekarang kerap mengirim hasil kirim tanpa id._serialized,
+// jadi id disusun ulang dari bagiannya. Tanpa ini pesan yang benar-benar terkirim
+// dianggap gagal dan id-nya tidak bisa dipakai menyimpan jejak polling.
+function sentMessageId(message) {
+  const id = message && message.id ? message.id : null;
+  if (!id) {
+    return "";
+  }
+  if (id._serialized) {
+    return String(id._serialized);
+  }
+  const remote = id.remote ? String(id.remote) : "";
+  const key = id.id ? String(id.id) : "";
+  if (!remote || !key) {
+    return "";
+  }
+  return `${id.fromMe ? "true" : "false"}_${remote}_${key}`;
+}
+
 function isRealSentMessage(result) {
-  const serialized = result && result.id ? String(result.id._serialized || "") : "";
-  return serialized.includes("@");
+  return sentMessageId(result).includes("@");
 }
 
 // Alamat cadangan terakhir yang diketahui per identitas, dipakai balasan percakapan
@@ -4622,7 +4640,7 @@ async function sendPostpartumVisitReminder(
     },
   );
   const message = await sendPoll(client, user.wa_id, poll);
-  if (!message || !message.id || !message.id._serialized) {
+  if (!sentMessageId(message)) {
     console.error(
       "Gagal mengirim polling kunjungan untuk:",
       user.wa_id,
@@ -4653,7 +4671,7 @@ async function sendPostpartumVisitReminder(
     db,
     user.wa_id,
     visit.code,
-    message.id._serialized,
+    sentMessageId(message),
   );
   return true;
 }
@@ -4799,7 +4817,7 @@ async function sendDailyPoll(db, client, user, now, options = {}) {
   });
 
   const message = await sendPoll(client, user.wa_id, poll);
-  if (!message || !message.id || !message.id._serialized) {
+  if (!sentMessageId(message)) {
     console.error("Gagal mengirim polling untuk:", user.wa_id);
     const cappedAttempts =
       Number.isFinite(Number(user.fe_poll_fail_count)) &&
@@ -4830,7 +4848,7 @@ async function sendDailyPoll(db, client, user, now, options = {}) {
   noteScheduledSend(user.wa_id, dateKey);
   await updateUser(db, user.wa_id, {
     last_reminder_date: dateKey,
-    last_poll_message_id: message.id._serialized,
+    last_poll_message_id: sentMessageId(message),
     fe_poll_last_attempt_at: now.toISO(),
     fe_poll_fail_count: 0,
   });
@@ -4908,7 +4926,7 @@ async function sendDeliveryValidationPoll(db, client, user, now, stage) {
     { allowMultipleAnswers: false },
   );
   const message = await sendPoll(client, user.wa_id, poll);
-  if (!message || !message.id || !message.id._serialized) {
+  if (!sentMessageId(message)) {
     console.error("Gagal mengirim polling validasi lahir untuk:", user.wa_id);
     const cappedAttempts =
       Number.isFinite(Number(user.delivery_poll_fail_count)) &&
@@ -4935,7 +4953,7 @@ async function sendDeliveryValidationPoll(db, client, user, now, stage) {
 
   noteScheduledSend(user.wa_id, today);
   const updates = {
-    last_delivery_poll_message_id: message.id._serialized,
+    last_delivery_poll_message_id: sentMessageId(message),
     delivery_poll_stage: stage,
     delivery_poll_last_attempt_at: now.toISO(),
     delivery_poll_fail_count: 0,
@@ -7373,6 +7391,7 @@ module.exports = {
   renderAdminDashboardPage,
   renderAdminUserDetailPage,
   isRealSentMessage,
+  sentMessageId,
   isDuplicateMessage,
   chatIdCandidates,
   deliverMessage,

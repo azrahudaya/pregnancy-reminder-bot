@@ -29,6 +29,18 @@ async function run() {
     assert.strictEqual(mod.isRealSentMessage({ id: { _serialized: "lid-poll-1700000000000" } }), false);
     assert.strictEqual(mod.isRealSentMessage(null), false);
     assert.strictEqual(mod.isRealSentMessage({}), false);
+    // Bentuk hasil kirim WhatsApp Web sekarang: id tanpa _serialized.
+    assert.strictEqual(
+      mod.isRealSentMessage({
+        id: { fromMe: true, remote: "204930287689898@lid", id: "3EB00903AA14DB4CAA61B9" },
+      }),
+      true,
+    );
+    assert.strictEqual(
+      mod.sentMessageId({ id: { fromMe: true, remote: "204930287689898@lid", id: "3EB00903AA14DB4CAA61B9" } }),
+      "true_204930287689898@lid_3EB00903AA14DB4CAA61B9",
+    );
+    assert.strictEqual(mod.sentMessageId({ id: { fromMe: true, remote: "204930287689898@lid" } }), "");
   });
 
   await test("chatIdCandidates menyusun target unik dan memakai alamat ingatan", () => {
