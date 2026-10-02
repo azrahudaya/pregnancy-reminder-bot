@@ -18,12 +18,15 @@
   "author": "Azra Hudaya",
   "license": "MIT",
   "description": "WhatsApp bot pengingat konsumsi tablet FE harian untuk ibu hamil, lengkap dengan admin web.",
+  "engines": {
+    "node": ">=18"
+  },
   "dependencies": {
-    "express": "^4.22.3",
+    "express": "^5.2.1",
     "luxon": "^3.7.2",
     "patch-package": "^8.0.1",
     "qrcode-terminal": "^0.12.0",
-    "sqlite3": "^5.1.7",
+    "sqlite3": "^6.0.1",
     "whatsapp-web.js": "1.34.7"
   }
 }

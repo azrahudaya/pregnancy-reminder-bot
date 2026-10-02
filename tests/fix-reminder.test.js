@@ -309,6 +309,132 @@ async function run() {
     assert.ok(detail.includes('class="kv kv-3"'), "ringkasan detail memakai daftar nilai rapat");
   });
 
+  await test("tanda baca akhir tidak menggagalkan jawaban ya/sudah", () => {
+    assert.strictEqual(mod.parseDeliveryValidationAnswer("Ya."), "Sudah");
+    assert.strictEqual(mod.parseDeliveryValidationAnswer("Sudah!"), "Sudah");
+    assert.strictEqual(mod.parseDeliveryValidationAnswer("belum."), "Belum");
+    assert.strictEqual(mod.parseDeliveryValidationAnswer("Ya"), "Sudah");
+    assert.strictEqual(mod.parseDeliveryValidationAnswer("mungkin"), null);
+    assert.strictEqual(mod.stripTrailingPunctuation("  Belum ya??  "), "belum ya");
+  });
+
+  await test("jawaban negatif tidak lagi terbaca sebagai ya", () => {
+    assert.strictEqual(mod.parseYesNo("belum ya"), false);
+    assert.strictEqual(mod.parseYesNo("tidak ya"), false);
+    assert.strictEqual(mod.parseYesNo("tidak boleh"), false);
+    assert.strictEqual(mod.parseYesNo("engga"), false);
+    assert.strictEqual(mod.parseYesNo("blm"), false);
+    assert.strictEqual(mod.parseYesNo("ya"), true);
+    assert.strictEqual(mod.parseYesNo("Ya."), true);
+    assert.strictEqual(mod.parseYesNo("sudah"), true);
+    assert.strictEqual(mod.parseYesNo("mungkin"), null);
+  });
+
+  await test("nomor gaya lokal diseragamkan ke awalan 62", () => {
+    assert.strictEqual(mod.normalizeWaIdInput("08123456789"), "628123456789@c.us");
+    assert.strictEqual(mod.normalizeWaIdInput("+62 812-3456-789"), "628123456789@c.us");
+    assert.strictEqual(mod.normalizeWaIdInput("628123456789@c.us"), "628123456789@c.us");
+    assert.strictEqual(mod.normalizeWaIdInput("204930287689898@lid"), "204930287689898@lid");
+    assert.strictEqual(mod.normalizeWaIdInput("abc"), null);
+  });
+
+  await test("janji jadwal pengingat mengikuti setelan hari jeda", () => {
+    assert.ok(/^setiap hari/.test(mod.reminderSchedulePhrase()));
+  });
+
+  await test("daftar panel menandai nomor yang juga ada di berkas .env", async () => {
+    const db = memoryDb();
+    const waId = "628999000111@c.us";
+    try {
+      await mod.ensureAllowedNumbersTable(db);
+      await mod.addPanelAllowedNumber(db, waId, "uji asal", "panel", "admin");
+      const serialized = mod.serializeAllowlistPanel();
+      const row = serialized.find((entry) => entry.wa_id === waId);
+      assert.ok(row, "baris panel ikut terserialisasi");
+      assert.strictEqual(row.from_env, false);
+      assert.strictEqual(typeof row.from_env, "boolean");
+      await mod.removePanelAllowedNumber(db, waId);
+    } finally {
+      await mod.removePanelAllowedNumber(db, waId).catch(() => {});
+      db.close();
+    }
+  });
+
+  await test("sesi admin terikat sidik jari, bisa dicabut, dan kedaluwarsa", () => {
+    const reqA = { headers: { "user-agent": "uji-a" }, socket: { remoteAddress: "10.0.0.1" } };
+    const reqB = { headers: { "user-agent": "uji-b" }, socket: { remoteAddress: "10.0.0.1" } };
+    const session = mod.__createAdminSessionForTest(reqA);
+    assert.ok(session.token && session.csrf, "sesi dibuat dengan token dan csrf");
+    assert.ok(mod.getAdminSession({ headers: { cookie: "rc_admin=" + session.token, "user-agent": "uji-a" }, socket: { remoteAddress: "10.0.0.1" } }), "sesi sah dipakai dari sidik jari yang sama");
+    assert.strictEqual(
+      mod.getAdminSession({ headers: { cookie: "rc_admin=" + session.token, "user-agent": "uji-b" }, socket: { remoteAddress: "10.0.0.1" } }),
+      null,
+    );
+    assert.strictEqual(mod.getAdminSession(reqB), null, "tanpa cookie tidak ada sesi");
+    mod.__destroyAdminSessionForTest(session.token);
+    assert.strictEqual(mod.__peekAdminSessionForTest(session.token), null, "logout mencabut sesi di sisi server");
+  });
+
+  await test("sesi panel mati saat hash password admin diputar", async () => {
+    const db = memoryDb();
+    try {
+      await mod.ensureSettingsTable(db);
+      await mod.setSetting(db, "admin_password_hash", "hash-lama");
+      await mod.setSetting(db, "admin_password_hash_salt", "salt-lama");
+      // Pemanggilan pertama mencatat sidik jari, seperti yang terjadi saat bot start.
+      await mod.refreshPasswordEpoch(db);
+      const req = { headers: { cookie: "", "user-agent": "uji-cabut" }, socket: { remoteAddress: "10.0.0.9" } };
+      const session = mod.__createAdminSessionForTest(req);
+      const cookieReq = { headers: { cookie: "rc_admin=" + session.token, "user-agent": "uji-cabut" }, socket: { remoteAddress: "10.0.0.9" } };
+      assert.ok(mod.getAdminSession(cookieReq), "sesi hidup sebelum password diputar");
+      await mod.setSetting(db, "admin_password_hash", "hash-baru");
+      await mod.refreshPasswordEpoch(db);
+      assert.strictEqual(mod.getAdminSession(cookieReq), null, "sesi lama langsung dicabut");
+      mod.__destroyAdminSessionForTest(session.token);
+    } finally {
+      db.close();
+    }
+  });
+
+  await test("peta rate limit dibersihkan setelah jendela lewat", () => {
+    const waId = "628999000222@c.us";
+    for (let i = 0; i < 25; i += 1) {
+      mod.checkRateLimit(waId);
+    }
+    assert.strictEqual(mod.checkRateLimit(waId).allowed, false, "batas per menit berlaku");
+    const removed = mod.pruneRateLimitState(Date.now() + 24 * 60 * 60 * 1000);
+    assert.ok(removed >= 1, "entri kadaluarsa ikut disapu");
+    assert.strictEqual(mod.checkRateLimit(waId).allowed, true, "setelah disapu nomor bisa kirim lagi");
+  });
+
+  await test("lock instance menolak PID yang sudah dipakai proses lain", () => {
+    assert.strictEqual(mod.isLiveInstancePid(process.pid), true);
+    assert.strictEqual(mod.isLiveInstancePid(999999), false);
+  });
+
+  await test("jam yang mudah salah baca diminta ditulis ulang", () => {
+    assert.strictEqual(mod.normalizeTimeInput("7.5"), null);
+    assert.strictEqual(mod.normalizeTimeInput("0"), null);
+    assert.strictEqual(mod.normalizeTimeInput("19.00"), "19:00");
+    assert.strictEqual(mod.normalizeTimeInput("7.30"), "07:30");
+    assert.strictEqual(mod.normalizeTimeInput("25:99"), null);
+    assert.strictEqual(mod.normalizeTimeInput("17:00"), "17:00");
+  });
+
+  await test("pertanyaan kunjungan nifas menyebut cara koreksi", () => {
+    const question = mod.buildPostpartumVisitQuestion({ label: "KF 1", code: "KF1" });
+    assert.ok(question.includes("koreksi kf1 sudah"), question);
+  });
+
+  await test("ekspor CSV menetralkan sel yang bisa jadi formula", () => {
+    assert.strictEqual(mod.csvEscape("=1+1"), "'=1+1");
+    assert.strictEqual(mod.csvEscape("+62 812"), "'+62 812");
+    assert.strictEqual(mod.csvEscape("@nama"), "'@nama");
+    assert.strictEqual(mod.csvEscape('kata "kutip"'), '"kata ""kutip"""');
+    assert.strictEqual(mod.csvEscape("biasa"), "biasa");
+    assert.strictEqual(mod.csvEscape(null), "");
+  });
+
   console.log("semua tes perbaikan reminder lulus");
 }
 

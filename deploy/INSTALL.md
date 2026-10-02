@@ -67,13 +67,53 @@ Verifikasi sesi benar-benar tersambung, jangan hanya melihat kode muncul:
 
 ```bash
 journalctl -u remindcare-bot -n 5 --no-pager | grep -i "siap digunakan"
-PW=$(cat data/admin_web_password.txt)
-curl -s -c /tmp/j -o /dev/null -X POST --data-urlencode "username=admin" \
-  --data-urlencode "password=$PW" http://127.0.0.1:3030/admin/login
-curl -s -b /tmp/j http://127.0.0.1:3030/admin/api/health | grep -o '"ready":[a-z]*'
+ss -ltn | grep 3030                                   # panel admin mendengarkan
+curl -s -o /dev/null -w "%{http_code}\n" http://127.0.0.1:3030/admin/login   # harus 200
 ```
 
-`"ready":true` berarti sesi hidup. Kalau masih `false`, taut ulang.
+Endpoint kesehatan butuh sesi admin, jadi masuk dulu lewat panel (password ada di
+`ADMIN_WEB_PASSWORD` pada `.env`, atau hasil `scripts/rotate-admin-password.js`).
+Kalau log tidak memuat "siap digunakan", taut ulang sesinya.
+
+## Password admin
+
+Password disimpan sebagai hash scrypt di tabel `settings` (`admin_password_hash` dan
+`admin_password_hash_salt`) dan itu satu-satunya sumber verifikasi. Tidak ada lagi berkas
+password plaintext di `data/`.
+
+```bash
+# ganti password tanpa menyentuh .env
+node scripts/rotate-admin-password.js            # mengikuti petunjuk di skrip
+```
+
+Setelah hash berubah, semua sesi panel yang sedang aktif dicabut otomatis (diperiksa tiap
+5 menit), jadi tidak ada sesi lama yang tertinggal setelah password diputar.
+
+## Sandbox Chromium di Ubuntu 24
+
+Chrome hanya mau menyalakan sandbox-nya kalau user namespace tidak diblokir AppArmor.
+Ubuntu 23.10 ke atas memblokirnya secara default, dan tanpa perbaikan ini bot hanya jalan
+dengan `PUPPETEER_NO_SANDBOX=1` (sandbox mati).
+
+```bash
+printf 'kernel.apparmor_restrict_unprivileged_userns=0\n' | sudo tee /etc/sysctl.d/99-remindcare-userns.conf
+sudo sysctl -p /etc/sysctl.d/99-remindcare-userns.conf
+# di .env: PUPPETEER_NO_SANDBOX=0
+sudo systemctl restart remindcare-bot
+pgrep -a -f chrome-linux64/chrome | grep -c -- "--no-sandbox"   # harus 0
+```
+
+## Backup di luar VPS
+
+`scripts/backup-db.js` menguji setiap backup (integritas, tabel inti, data terbaca) sebelum
+diakui sah. Backup yang hanya ada di VPS yang sama belum aman, jadi isi salah satu:
+
+```bash
+BACKUP_OFFSITE_DIR=/mnt/backup-remindcare     # direktori mount (rclone, S3, NFS)
+BACKUP_REMOTE_CMD=rclone copy %f remote:remindcare-backups/   # perintah sendiri, %f = berkas backup
+```
+
+Tanpa keduanya, skrip tetap jalan tetapi mencetak peringatan bahwa salinan luar VPS belum ada.
 
 ## Memulihkan sesi WhatsApp
 
@@ -91,12 +131,26 @@ Kalau backup sesi tidak ada, jalankan `node index.js` untuk memindai QR baru.
 
 ## Memulihkan database
 
+Pakai berkas hasil backup (`VACUUM INTO`), bukan salinan manual `data/remindcare.db`:
+salinan manual tidak memuat isi WAL terakhir, jadi transaksi paling baru bisa hilang.
+
 ```bash
+cd /opt/remindcare
 sudo systemctl stop remindcare-bot
+ls -la data/backups/                       # pilih berkas terbaru
+sudo -u remindcare node -e "
+const s=require('sqlite3').verbose();const d=new s.Database('data/backups/remindcare-TANGGAL-JAM.db');
+d.get('PRAGMA integrity_check',(e,r)=>{console.log(e?e.message:r);d.close();});
+"
 cp data/backups/remindcare-TANGGAL-JAM.db data/remindcare.db
-sqlite3 data/remindcare.db "PRAGMA integrity_check;"
+rm -f data/remindcare.db-wal data/remindcare.db-shm
+sudo chown remindcare:remindcare data/remindcare.db
 sudo systemctl start remindcare-bot
+journalctl -u remindcare-bot -n 20 --no-pager | grep -iE "siap digunakan|integrity"
 ```
+
+Kalau `integrity_check` gagal saat start, bot menahan semua pengiriman dan mengirim alarm.
+Pulihkan dulu dari backup sebelum mengaktifkan lagi.
 
 ## Yang tidak boleh masuk git
 

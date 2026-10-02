@@ -68,6 +68,10 @@ const ADMIN_WEB_PASSWORD = (process.env.ADMIN_WEB_PASSWORD || "").trim();
 const ADMIN_WEB_SESSION_TTL_MS = Number(
   process.env.ADMIN_WEB_SESSION_TTL_MS || 8 * 60 * 60 * 1000,
 );
+// Sesi yang dibiarkan terbuka tanpa aktivitas ikut ditutup, bukan hanya menunggu TTL.
+const ADMIN_WEB_IDLE_TIMEOUT_MS = Number(
+  process.env.ADMIN_WEB_IDLE_TIMEOUT_MS || 2 * 60 * 60 * 1000,
+);
 const REMINDER_LOG_RETENTION_DAYS = Number(
   process.env.REMINDER_LOG_RETENTION_DAYS || 180,
 );
@@ -94,7 +98,7 @@ const DISABLE_SANDBOX =
   /^(1|true)$/i.test(process.env.PUPPETEER_NO_SANDBOX || "") ||
   /^(1|true)$/i.test(process.env.DISABLE_CHROME_SANDBOX || "");
 
-const DATA_DIR = path.join(__dirname, "data");
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, "data");
 const DB_PATH = path.join(DATA_DIR, "remindcare.db");
 // Nomor bot, format internasional tanpa tanda plus, contoh 6281234567890.
 // Kalau diisi, penautan tidak memakai QR: WhatsApp meminta kode 8 digit yang diketik
@@ -137,7 +141,6 @@ let lastClientReadyAt = null;
 let lastDisconnectedAt = null;
 let lastDisconnectReason = null;
 let lastBreakerTrips = 0;
-const lastAckByMessageId = new Map();
 const adminLoginAttempts = new Map();
 let reminderLoopRunning = false;
 let lastCleanupDate = null;
@@ -381,6 +384,20 @@ function buildUserAgent(executablePath) {
 // nomor yang sama; sesi bisa di-invalidate paksa, dan itu pemicu tinjauan akun.
 const LOCK_PATH = path.join(DATA_DIR, "bot.lock");
 
+function isLiveInstancePid(pid) {
+  try {
+    process.kill(pid, 0);
+  } catch (err) {
+    return false;
+  }
+  // PID bisa dipakai ulang proses lain, jadi direktori kerja ikut dibandingkan.
+  try {
+    return fs.realpathSync(`/proc/${pid}/cwd`) === fs.realpathSync(process.cwd());
+  } catch (err) {
+    return true;
+  }
+}
+
 function acquireInstanceLock() {
   ensureDataDir();
   try {
@@ -392,8 +409,8 @@ function acquireInstanceLock() {
     let stale = false;
     try {
       const pid = Number(String(fs.readFileSync(LOCK_PATH, "utf8")).trim());
-      if (Number.isFinite(pid) && pid > 0) {
-        process.kill(pid, 0);
+      if (!Number.isFinite(pid) || pid <= 0 || !isLiveInstancePid(pid)) {
+        stale = true;
       }
     } catch (checkErr) {
       stale = true;
@@ -472,7 +489,10 @@ function normalizeWaIdInput(input) {
   if (!digits) {
     return null;
   }
-  return `${digits}@c.us`;
+  // Nomor gaya lokal (08xx) yang ditulis operator atau diisi di .env harus jadi
+  // identitas yang sama dengan pengirim nyata, yaitu berawalan 62.
+  const withCountry = digits.startsWith("0") ? `62${digits.slice(1)}` : digits;
+  return `${withCountry}@c.us`;
 }
 
 // Satu ibu bisa muncul sebagai dua alamat berbeda: nomor (@c.us) dan alamat
@@ -558,6 +578,15 @@ function listPanelAllowedNumbers() {
 // Operator hanya perlu melihat nomor yang bisa dibaca ulang, bukan alamat perangkat.
 function listEnvAllowedNumbers() {
   return [...ALLOWLIST_WA_IDS].filter((waId) => String(waId).endsWith("@c.us")).sort();
+}
+
+// Baris panel yang nomornya juga ada di berkas .env tidak bisa dicabut dari panel,
+// jadi penandanya ikut dikirim ke tampilan supaya tombolnya tidak menyesatkan.
+function serializeAllowlistPanel() {
+  return listPanelAllowedNumbers().map((entry) => ({
+    ...entry,
+    from_env: ALLOWLIST_WA_IDS.has(entry.wa_id),
+  }));
 }
 
 function isAllowlistedIdentity(identityIds) {
@@ -1189,7 +1218,7 @@ function buildUserInfoMessage(user, postpartumLogs, now = nowWib()) {
     user &&
     user.status === "active" &&
     user.reminder_time
-      ? withStatusIcon("done", `Aktif setiap hari jam ${user.reminder_time} WIB`)
+      ? withStatusIcon("done", `Aktif ${reminderSchedulePhrase()} jam ${user.reminder_time} WIB`)
       : !user || !user.reminder_time
         ? withStatusIcon("wait", "Jam pengingat belum disetel")
         : withStatusIcon("fail", "Pengingat FE sedang tidak aktif");
@@ -1387,7 +1416,7 @@ function parseDeliveryValidationAnswer(input) {
   if (!input) {
     return null;
   }
-  const normalized = input.trim().toLowerCase();
+  const normalized = stripTrailingPunctuation(input);
   if (
     normalized.includes("sudah melahir") ||
     normalized.includes("udah melahir")
@@ -1537,7 +1566,9 @@ function buildPostpartumVisitMessage(user, visit) {
 }
 
 function buildPostpartumVisitQuestion(visit) {
-  return `Apakah Ibu sudah melakukan kunjungan ${visit.label}?`;
+  // Jawaban poll tidak bisa ditarik kembali, jadi jalan koreksinya disebut di tempat
+  // kesalahan itu paling sering terjadi.
+  return `Apakah Ibu sudah melakukan kunjungan ${visit.label}?\nSalah pencet? ketik koreksi ${visit.code.toLowerCase()} sudah`;
 }
 
 function previewOf(value, fallback = "[pesan]") {
@@ -1768,10 +1799,17 @@ function scryptHash(password, salt) {
   return crypto.scryptSync(String(password), String(salt), 32).toString("hex");
 }
 
-function getAdminPasswordConfig() {
+// Hash scrypt di tabel settings adalah satu-satunya sumber verifikasi. Berkas plaintext
+// hanya dibaca sekali saat bootstrap, yaitu ketika belum ada hash sama sekali.
+async function resolvePasswordConfig(db) {
   ensureDataDir();
   if (ADMIN_WEB_PASSWORD) {
     return { password: ADMIN_WEB_PASSWORD, source: "env", filePath: null };
+  }
+  const existingHash = await getSetting(db, "admin_password_hash", null);
+  const existingSalt = await getSetting(db, "admin_password_hash_salt", null);
+  if (existingHash && existingSalt) {
+    return { password: null, source: "db-hash", filePath: null };
   }
   const passwordFile = path.join(DATA_DIR, "admin_web_password.txt");
   if (fs.existsSync(passwordFile)) {
@@ -1810,7 +1848,13 @@ function parseCookies(header) {
     if (!key) {
       continue;
     }
-    cookies[key] = decodeURIComponent(value);
+    try {
+      cookies[key] = decodeURIComponent(value);
+    } catch (err) {
+      // Cookie dengan persen tak sah sebelumnya melempar URIError dan menjadikan
+      // seluruh permintaan panel balas 500.
+      cookies[key] = value;
+    }
   }
   return cookies;
 }
@@ -1830,6 +1874,9 @@ function isPasswordMatch(input, expected) {
 // Sumber kebenaran pemeriksaan password: hash scrypt di tabel settings kalau ada.
 // File plaintext hanya catatan operator (mode 600), bukan satu-satunya penyimpan.
 async function ensureAdminPasswordHash(db, passwordConfig) {
+  if (!passwordConfig || !passwordConfig.password) {
+    return;
+  }
   const existing = await getSetting(db, "admin_password_hash", null);
   const existingSalt = await getSetting(db, "admin_password_hash_salt", null);
   if (
@@ -1851,7 +1898,28 @@ async function verifyAdminPassword(db, input, passwordConfig) {
   if (hash && salt) {
     return isPasswordMatch(scryptHash(input, salt), hash);
   }
-  return isPasswordMatch(input, passwordConfig.password);
+  if (passwordConfig && passwordConfig.password) {
+    return isPasswordMatch(input, passwordConfig.password);
+  }
+  return false;
+}
+
+let passwordEpoch = 0;
+let passwordFingerprint = "";
+
+// Password diputar ulang dari skrip lain lewat tabel settings, jadi perubahan itu
+// diperiksa berkala dan sesi yang masih hidup ikut dicabut.
+async function refreshPasswordEpoch(db) {
+  const hash = await getSetting(db, "admin_password_hash", null);
+  const salt = await getSetting(db, "admin_password_hash_salt", null);
+  const fingerprint = hash && salt ? `${hash}:${salt}` : "plain";
+  if (passwordFingerprint && fingerprint !== passwordFingerprint) {
+    passwordEpoch += 1;
+    adminSessions.clear();
+    console.warn("Hash password admin berubah: semua sesi panel dicabut.");
+  }
+  passwordFingerprint = fingerprint;
+  return passwordEpoch;
 }
 
 function clientIp(req) {
@@ -1864,6 +1932,38 @@ function clientIp(req) {
     }
   }
   return (req.socket && req.socket.remoteAddress) || "unknown";
+}
+
+// Peta per alamat tumbuh seumur proses. Entri kadaluarsa disapu berkala supaya memori
+// tidak naik terus saat nomor asing ikut mengirim pesan atau login dicoba dari banyak IP.
+function pruneRateLimitState(nowMs = Date.now()) {
+  const maxAgeMs = Math.max(RATE_LIMIT_WINDOW_MS, RATE_LIMIT_COOLDOWN_MS) * 2;
+  let removed = 0;
+  for (const [waId, state] of rateLimitState) {
+    const stamps = (state && state.stamps ? state.stamps : []).filter(
+      (ts) => nowMs - ts <= maxAgeMs,
+    );
+    if (!stamps.length) {
+      rateLimitState.delete(waId);
+      removed += 1;
+      continue;
+    }
+    state.stamps = stamps;
+  }
+  return removed;
+}
+
+function pruneAdminLoginAttempts(nowMs = Date.now()) {
+  for (const [ip, entry] of adminLoginAttempts) {
+    const stamps = (entry && entry.stamps ? entry.stamps : []).filter(
+      (ts) => nowMs - ts < ADMIN_LOGIN_WINDOW_MS,
+    );
+    if (!stamps.length) {
+      adminLoginAttempts.delete(ip);
+      continue;
+    }
+    entry.stamps = stamps;
+  }
 }
 
 // Percobaan login gagal berulang adalah jalan masuk paling umum untuk panel yang
@@ -1899,15 +1999,32 @@ function clearAdminLoginFailures(ip) {
   adminLoginAttempts.delete(ip);
 }
 
-function createAdminSession() {
+function sessionTtlMs() {
+  return Number.isFinite(ADMIN_WEB_SESSION_TTL_MS) && ADMIN_WEB_SESSION_TTL_MS > 0
+    ? ADMIN_WEB_SESSION_TTL_MS
+    : 8 * 60 * 60 * 1000;
+}
+
+// Cookie yang dicuri tidak berguna dari mesin lain: sesi terikat ke alamat dan
+// User-Agent saat login, dan mati kalau hash password berubah.
+function sessionFingerprint(req) {
+  const agent = String((req && req.headers && req.headers["user-agent"]) || "").slice(0, 200);
+  return `${clientIp(req)}|${agent}`;
+}
+
+function createAdminSession(req) {
   const token = crypto.randomBytes(24).toString("base64").replace(/[+/=]/g, "");
   const csrf = crypto.randomBytes(24).toString("base64").replace(/[+/=]/g, "");
-  const ttl =
-    Number.isFinite(ADMIN_WEB_SESSION_TTL_MS) && ADMIN_WEB_SESSION_TTL_MS > 0
-      ? ADMIN_WEB_SESSION_TTL_MS
-      : 8 * 60 * 60 * 1000;
+  const now = Date.now();
   // token ikut disimpan supaya logout bisa mencabut sesi ini di sisi server
-  adminSessions.set(token, { expiresAt: Date.now() + ttl, csrf, token });
+  adminSessions.set(token, {
+    expiresAt: now + sessionTtlMs(),
+    csrf,
+    token,
+    fingerprint: sessionFingerprint(req),
+    lastSeen: now,
+    epoch: passwordEpoch,
+  });
   return { token, csrf };
 }
 
@@ -1927,25 +2044,31 @@ function getAdminSession(req) {
   if (!session) {
     return null;
   }
-  if (session.expiresAt && Date.now() > session.expiresAt) {
+  const now = Date.now();
+  const idleLimit = Number.isFinite(ADMIN_WEB_IDLE_TIMEOUT_MS) ? ADMIN_WEB_IDLE_TIMEOUT_MS : 0;
+  const idle = idleLimit > 0 && session.lastSeen && now - session.lastSeen > idleLimit;
+  if (
+    (session.expiresAt && now > session.expiresAt) ||
+    idle ||
+    session.epoch !== passwordEpoch ||
+    session.fingerprint !== sessionFingerprint(req)
+  ) {
     adminSessions.delete(token);
     return null;
   }
+  session.lastSeen = now;
   return session;
 }
 
 function setAdminCookie(res, token) {
-  const ttlMs =
-    Number.isFinite(ADMIN_WEB_SESSION_TTL_MS) && ADMIN_WEB_SESSION_TTL_MS > 0
-      ? ADMIN_WEB_SESSION_TTL_MS
-      : 8 * 60 * 60 * 1000;
+  const ttlMs = sessionTtlMs();
   const maxAgeSeconds = Math.floor(ttlMs / 1000);
   const expires = new Date(Date.now() + ttlMs).toUTCString();
   const parts = [
     `rc_admin=${encodeURIComponent(token)}`,
     "Path=/",
     "HttpOnly",
-    "SameSite=Lax",
+    "SameSite=Strict",
     `Max-Age=${maxAgeSeconds}`,
     `Expires=${expires}`,
   ];
@@ -1962,7 +2085,7 @@ function clearAdminCookie(res) {
     "Max-Age=0",
     "Expires=Thu, 01 Jan 1970 00:00:00 GMT",
     "HttpOnly",
-    "SameSite=Lax",
+    "SameSite=Strict",
   ];
   if (ADMIN_WEB_COOKIE_SECURE) {
     parts.push("Secure");
@@ -2009,7 +2132,7 @@ function renderAdminLoginPage(message, options = {}) {
       <div class="login-card">
         <div class="panel">
           <div class="panel-head">
-            <h2>${icon("pulse")}RemindCare Admin</h2>
+            <h1>${icon("pulse")}RemindCare Admin</h1>
             <span class="badge">panel internal</span>
           </div>
           <div class="panel-body">
@@ -2023,7 +2146,7 @@ function renderAdminLoginPage(message, options = {}) {
                 <label for="login-password">Password</label>
                 <input id="login-password" name="password" type="password" autocomplete="current-password" required>
               </div>
-              <button type="submit" class="btn-primary" style="margin-top:12px;width:100%">${icon("logout")}Masuk</button>
+              <button type="submit" class="btn-primary" style="margin-top:12px;width:100%">${icon("check")}Masuk</button>
             </form>
           </div>
         </div>
@@ -2106,6 +2229,7 @@ function renderAdminDashboardPage(options = {}) {
           <h2 id="action-title">${icon("alert")}Perlu tindakan</h2>
           <span class="badge" id="action-count">memuat</span>
         </div>
+        <p class="note" id="action-note" hidden style="padding:10px 12px 0"></p>
         <ul class="tasks" id="action-list">
           <li class="empty">Memuat.</li>
         </ul>
@@ -2120,7 +2244,7 @@ function renderAdminDashboardPage(options = {}) {
           <div class="metric"><div class="k">Menunggu jawaban</div><div class="v" id="today-waiting">-</div></div>
           <div class="metric"><div class="k">Dijawab sudah</div><div class="v" id="today-sudah">-</div></div>
           <div class="metric"><div class="k">Dijawab belum</div><div class="v" id="today-belum">-</div></div>
-          <div class="metric"><div class="k">Tidak terkirim</div><div class="v" id="today-blocked">-</div></div>
+          <div class="metric"><div class="k">User tidak berjalan</div><div class="v" id="today-blocked">-</div></div>
         </div>
       </section>
 
@@ -2139,6 +2263,7 @@ function renderAdminDashboardPage(options = {}) {
           </div>
         </div>
         <p class="note" id="users-note" hidden style="padding:10px 12px 0"></p>
+        <p class="muted" style="padding:0 12px 10px">FE tablet tambah darah, KF dan KN kunjungan nifas serta bayi baru.</p>
         <div class="table-wrap">
           <table>
             <caption id="users-count">memuat</caption>
@@ -2414,6 +2539,7 @@ function renderAdminDashboardPage(options = {}) {
       }
       function renderUsers() {
         const tbody = document.getElementById('users-body');
+        tbody.setAttribute('aria-busy', 'false');
         const counts = phaseCounts();
         const filtered = usersCache.filter((user) => {
           if (phaseFilter !== 'all' && classifyPhase(user) !== phaseFilter) return false;
@@ -2488,11 +2614,11 @@ function renderAdminDashboardPage(options = {}) {
         const data = accessCache || { panel: [], env: [] };
         const tbody = document.getElementById('access-body');
         const rows = (data.panel || [])
-          .map((entry) => ({ wa_id: entry.wa_id, source: 'panel', note: entry.note, created_at: entry.created_at }))
+          .map((entry) => ({ wa_id: entry.wa_id, source: 'panel', note: entry.note, created_at: entry.created_at, from_env: entry.from_env }))
           .concat((data.env || []).map((waId) => ({ wa_id: waId, source: 'env', note: '', created_at: '' })));
         tbody.innerHTML = '';
         tbody.setAttribute('aria-busy', 'false');
-        setText('access-count', rows.length + ' nomor dilayani. Alamat perangkat (@lid) ikut dicocokkan tapi tidak ditampilkan.');
+        setText('access-count', rows.length + ' nomor dilayani. Nomor disimpan berawalan 62, dan alamat perangkat (@lid) dicocokkan otomatis sehingga tidak perlu didaftarkan.');
         if (!rows.length) {
           const tr = document.createElement('tr');
           const td = document.createElement('td');
@@ -2510,9 +2636,8 @@ function renderAdminDashboardPage(options = {}) {
           numberCell.textContent = row.wa_id;
           tr.appendChild(numberCell);
           const sourceCell = document.createElement('td');
-          sourceCell.appendChild(
-            badge(row.source === 'panel' ? 'badge badge-accent' : 'badge', row.source === 'panel' ? 'panel' : 'berkas .env'),
-          );
+          const label = row.source === 'panel' ? (row.from_env ? 'panel + berkas .env' : 'panel') : 'berkas .env';
+          sourceCell.appendChild(badge(row.source === 'panel' ? 'badge badge-accent' : 'badge', label));
           tr.appendChild(sourceCell);
           const noteCell = document.createElement('td');
           noteCell.textContent = row.note ? row.note : '-';
@@ -2522,7 +2647,7 @@ function renderAdminDashboardPage(options = {}) {
           dateCell.textContent = row.created_at ? fmtDt(row.created_at) : '-';
           tr.appendChild(dateCell);
           const actionCell = document.createElement('td');
-          if (row.source === 'panel') {
+          if (row.source === 'panel' && !row.from_env) {
             const btn = document.createElement('button');
             btn.type = 'button';
             btn.className = 'btn';
@@ -2589,6 +2714,7 @@ function renderAdminDashboardPage(options = {}) {
       }
       function renderLogs() {
         const list = document.getElementById('logs-body');
+        list.setAttribute('aria-busy', 'false');
         const limit = logsOpen ? 50 : 10;
         list.innerHTML = '';
         if (!logsCache.length) {
@@ -2654,11 +2780,21 @@ function renderAdminDashboardPage(options = {}) {
         btn.disabled = true;
         const results = await Promise.all([
           guard('status-note', async () => { healthCache = await fetchJson('/admin/api/health'); renderStatus(); }),
-          guard('users-note', async () => { summaryCache = await fetchJson('/admin/api/summary'); renderToday(); renderActions(); }),
+          guard('action-note', async () => { summaryCache = await fetchJson('/admin/api/summary'); renderToday(); renderActions(); }),
           guard('users-note', async () => { const d = await fetchJson('/admin/api/users'); usersCache = d.users || []; renderUsers(); }),
           guard('logs-note', async () => { const d = await fetchJson('/admin/api/logs'); logsCache = d.logs || []; renderLogs(); }),
           guard('access-status', async () => { const d = await fetchJson('/admin/api/allowlist'); accessCache = { panel: d.panel || [], env: d.env || [] }; renderAccess(); }),
         ]);
+        if (!results[1].ok) {
+          // Tanpa ini panel Perlu tindakan berhenti di "Memuat." tanpa sebab yang terlihat.
+          const list = document.getElementById('action-list');
+          list.innerHTML = '';
+          const li = document.createElement('li');
+          li.className = 'empty';
+          li.textContent = 'Ringkasan gagal dimuat. Klik Muat ulang untuk mencoba lagi.';
+          list.appendChild(li);
+          setText('action-count', 'gagal');
+        }
         const failed = results.filter((r) => !r.ok);
         if (failed.length) {
           document.getElementById('error-text').textContent = 'Sebagian data gagal dimuat (' + failed.map((r) => r.error).join(', ') + '). Bagian yang gagal ditandai.';
@@ -2684,7 +2820,7 @@ function renderAdminDashboardPage(options = {}) {
           setAccessStatus(
             res.already
               ? res.wa_id + ' sudah ada di daftar, tidak ada perubahan.'
-              : res.wa_id + ' diizinkan. Minta dia kirim pesan ke bot supaya pendataannya jalan.',
+              : res.wa_id + ' diizinkan. Minta dia kirim pesan start ke bot supaya pendataannya jalan.',
             'ok',
           );
           showToast('Nomor diizinkan');
@@ -2694,6 +2830,17 @@ function renderAdminDashboardPage(options = {}) {
           button.disabled = false;
         }
       });
+      // <details> tidak menutup sendiri saat fokus pindah, jadi ditutup pada Escape
+      // dan klik di luar seperti menu pada umumnya.
+      const exportPop = document.querySelector('details.pop');
+      if (exportPop) {
+        document.addEventListener('keydown', (event) => {
+          if (event.key === 'Escape' && exportPop.open) exportPop.open = false;
+        });
+        document.addEventListener('click', (event) => {
+          if (exportPop.open && !exportPop.contains(event.target)) exportPop.open = false;
+        });
+      }
       document.getElementById('refresh-btn').addEventListener('click', () => loadAll(true));
       document.getElementById('error-retry').addEventListener('click', () => loadAll(true));
       document.getElementById('logs-toggle').addEventListener('click', () => { logsOpen = !logsOpen; renderLogs(); });
@@ -2726,6 +2873,9 @@ function renderAdminUserDetailPage(waId, options = {}) {
     <style nonce="${nonce}">${ADMIN_CSS}
       .kv.kv-3 > div { border-top: none; }
       .pager { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--line); }
+      .aksi-status { margin: 0; color: var(--muted); font-size: 11.5px; }
+      .aksi-status[data-tone="ok"] { color: var(--ok); }
+      .aksi-status[data-tone="bad"] { color: var(--bad); }
     </style>
   </head>
   <body>
@@ -2757,6 +2907,27 @@ function renderAdminUserDetailPage(waId, options = {}) {
           <div><dt>Total sudah</dt><dd id="sudah" class="num">-</dd></div>
           <div><dt>Total belum</dt><dd id="belum" class="num">-</dd></div>
         </dl>
+      </section>
+
+      <section class="panel" aria-labelledby="aksi-title">
+        <div class="panel-head">
+          <h2 id="aksi-title">${icon("sliders")}Tindakan operator</h2>
+          <span class="aksi-status" id="aksi-status" role="status" aria-live="polite"></span>
+        </div>
+        <div class="panel-body">
+          <div class="row">
+            <button type="button" id="aksi-resume" class="btn-primary">${icon("check")}Aktifkan pengingat</button>
+            <button type="button" id="aksi-pause">${icon("alert")}Jeda pengingat</button>
+            <button type="button" id="aksi-complete">${icon("check")}Tandai selesai</button>
+          </div>
+          <div class="row" style="margin-top:10px">
+            <div class="field" style="flex:0 1 180px">
+              <label for="aksi-jam">Ubah jam pengingat</label>
+              <input id="aksi-jam" type="text" inputmode="numeric" autocomplete="off" placeholder="19:00">
+            </div>
+            <button type="button" id="aksi-simpan-jam">${icon("clock")}Simpan jam</button>
+          </div>
+        </div>
       </section>
 
       <section class="panel" aria-labelledby="persalinan-title">
@@ -2918,6 +3089,52 @@ function renderAdminUserDetailPage(waId, options = {}) {
       }
       document.getElementById('prev').addEventListener('click', () => { if (page > 0) { page -= 1; loadLogs(); } });
       document.getElementById('next').addEventListener('click', () => { page += 1; loadLogs(); });
+      const ACTION_LABEL = {
+        resume: 'pengingat diaktifkan',
+        pause: 'pengingat dijeda',
+        complete: 'ditandai selesai',
+        set_reminder_time: 'jam pengingat disimpan',
+      };
+      async function runUserAction(action, value) {
+        const note = document.getElementById('aksi-status');
+        note.setAttribute('data-tone', 'info');
+        note.textContent = 'Menjalankan...';
+        try {
+          const res = await fetch('/admin/api/users/' + encodeURIComponent(waId) + '/actions', {
+            method: 'POST',
+            headers: csrfHeaders({ 'Content-Type': 'application/json' }),
+            body: JSON.stringify(value === undefined ? { action } : { action, value }),
+          });
+          let data = null;
+          try { data = await res.json(); } catch (err) { data = null; }
+          if (res.status === 401) { window.location.href = '/admin/login?expired=1'; return; }
+          if (!res.ok || !data || !data.ok) {
+            throw new Error((data && data.error) || ('kode ' + res.status));
+          }
+          note.setAttribute('data-tone', 'ok');
+          note.textContent = 'Selesai: ' + ACTION_LABEL[action] + '.';
+          if (action === 'set_reminder_time') {
+            document.getElementById('aksi-jam').value = '';
+          }
+          await loadDetail();
+        } catch (err) {
+          note.setAttribute('data-tone', 'bad');
+          note.textContent = 'Gagal: ' + err.message;
+        }
+      }
+      document.getElementById('aksi-resume').addEventListener('click', () => runUserAction('resume'));
+      document.getElementById('aksi-pause').addEventListener('click', () => runUserAction('pause'));
+      document.getElementById('aksi-complete').addEventListener('click', () => runUserAction('complete'));
+      document.getElementById('aksi-simpan-jam').addEventListener('click', () => {
+        const value = document.getElementById('aksi-jam').value.trim();
+        if (!value) {
+          const note = document.getElementById('aksi-status');
+          note.setAttribute('data-tone', 'bad');
+          note.textContent = 'Isi jam dulu, contoh 19:00.';
+          return;
+        }
+        runUserAction('set_reminder_time', value);
+      });
       loadDetail();
       loadLogs();
     </script>
@@ -3678,16 +3895,38 @@ async function updateUser(db, waId, updates) {
   );
 }
 
+// Jawaban ibu sering ditulis dengan tanda baca akhir ("Ya." / "Sudah!"), jadi tanda itu
+// dibuang dulu supaya jawaban yang sah tidak dibalas "belum paham".
+function stripTrailingPunctuation(input) {
+  return String(input || "")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s.!?,;:]+$/g, "");
+}
+
+// Janji jadwal ke user harus sama dengan perilaku pengiriman; satu hari memang bisa
+// sengaja dilewati sebagai penangkal pola otomatis.
+function reminderSchedulePhrase() {
+  const skip = settingInt("reminder_skip_weekday");
+  const names = ["Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu", "Minggu"];
+  if (skip >= 1 && skip <= 7) {
+    return `setiap hari kecuali ${names[skip - 1]}`;
+  }
+  return "setiap hari";
+}
+
 function parseYesNo(input) {
   if (!input) {
     return null;
   }
-  const normalized = input.trim().toLowerCase();
-  if (/\b(ya|iya|yes|y|ok|mau|boleh)\b/.test(normalized)) {
-    return true;
-  }
-  if (/\b(tidak|tdk|no|gak|ga|nggak|belum)\b/.test(normalized)) {
+  const normalized = stripTrailingPunctuation(input);
+  // Negatif diperiksa lebih dulu: "belum ya" dan "tidak boleh" harus terbaca tidak,
+  // bukan ya hanya karena memuat kata "ya".
+  if (/\b(tidak|tdk|no|gak|ga|nggak|engga|enggak|belum|blm|bukan)\b/.test(normalized)) {
     return false;
+  }
+  if (/\b(ya|iya|yes|y|ok|oke|mau|boleh|sudah|udah)\b/.test(normalized)) {
+    return true;
   }
   return null;
 }
@@ -3697,6 +3936,11 @@ function normalizeTimeInput(input) {
     return null;
   }
   const raw = input.trim().toLowerCase();
+  // "7.5" mudah dibaca sebagai tujuh setengah, dan "0" bukan jam yang wajar untuk
+  // pengingat tablet, jadi keduanya diminta ditulis ulang.
+  if (raw === "0" || /^\d{1,2}\.\d$/.test(raw)) {
+    return null;
+  }
   const cleaned = raw.replace(/\s+/g, "").replace(".", ":");
 
   let hour;
@@ -4388,6 +4632,15 @@ async function handleAdminCommand(db, client, user, text) {
       return true;
     }
 
+    if (!target.endsWith("@c.us")) {
+      await sendText(
+        client,
+        user.wa_id,
+        "Pakai nomor Ibu, bukan alamat perangkat. Contoh: admin allow 6281234567890. ✍️",
+      );
+      return true;
+    }
+
     const { user: targetUser } = await ensureUser(db, target);
     const updates = {};
     if (action === "allow") {
@@ -4399,6 +4652,10 @@ async function handleAdminCommand(db, client, user, text) {
       updates.is_blocked = 1;
     } else if (action === "unblock") {
       updates.is_blocked = 0;
+      // Buka blokir tanpa mengaktifkan lagi membuat ibu tetap tidak diingatkan,
+      // jadi perilakunya disamakan dengan aksi di panel admin.
+      updates.allow_remindcare = 1;
+      updates.status = "active";
     }
 
     await updateUser(db, targetUser.wa_id, updates);
@@ -4416,6 +4673,14 @@ async function handleAdminCommand(db, client, user, text) {
       daysInput = parts[1];
     }
     const days = daysInput ? Number(daysInput) : REMINDER_LOG_RETENTION_DAYS;
+    if (!Number.isFinite(days) || days < 0) {
+      await sendText(
+        client,
+        user.wa_id,
+        "Retensi harus angka hari, contoh: admin purge logs 30. ✍️",
+      );
+      return true;
+    }
     const removed = await purgeOldLogs(db, days);
     await sendText(
       client,
@@ -5628,6 +5893,14 @@ async function handleOnboardingAnswer(db, client, user, text) {
       );
       return;
     }
+    if (!/\p{L}/u.test(nameValue)) {
+      await sendText(
+        client,
+        user.wa_id,
+        "Nama itu belum berisi huruf. Ketik nama Ibu ya.",
+      );
+      return;
+    }
     if (blockedWords.includes(lower) || lower.startsWith("ubah jam")) {
       await sendText(
         client,
@@ -5642,10 +5915,14 @@ async function handleOnboardingAnswer(db, client, user, text) {
     const min = question.field === "age" ? 15 : 1;
     const max = question.field === "age" ? 60 : 15;
     if (!Number.isInteger(num) || num < min || num > max) {
+      const escape =
+        question.field === "age"
+          ? " Kalau usianya di luar rentang itu, hubungi admin ya."
+          : "";
       await sendText(
         client,
         user.wa_id,
-        `Jawab dengan angka ${min} sampai ${max} ya.`,
+        `Jawab dengan angka ${min} sampai ${max} ya.${escape}`,
       );
       return;
     }
@@ -5675,7 +5952,7 @@ async function handleOnboardingAnswer(db, client, user, text) {
     await sendText(
       client,
       user.wa_id,
-      `Siap! RemindCare akan mengingatkan setiap hari jam ${finalTime} WIB. ⏰✨`,
+      `Siap! RemindCare akan mengingatkan ${reminderSchedulePhrase()} jam ${finalTime} WIB. ⏰✨`,
     );
     return;
   }
@@ -5735,7 +6012,7 @@ async function handleCommand(db, client, user, text) {
     await sendText(
       client,
       user.wa_id,
-      `Menu:\n*start* - aktifkan pengingat\n*stop* - hentikan semua pengingat\n*ubah jam 17:00* - ganti jam pengingat\n*info* - ringkasan data dan jadwal pengingat\n*cek persalinan* - tanya status persalinan\n*edit* - daftar perintah edit data\n*batal* - batalkan konfirmasi atau pendataan yang sedang jalan\n*about* - info singkat\n*website* - alamat website\n*delete* - hapus akun`,
+      `Menu:\n*start* - aktifkan pengingat\n*stop* - hentikan semua pengingat\n*ubah jam 17:00* - ganti jam pengingat\n*info* - ringkasan data dan jadwal pengingat\n*cek persalinan* - tanya status persalinan\n*edit* - daftar perintah edit data\n*koreksi kf1 sudah* - betulkan jawaban kunjungan nifas yang salah ketik\n*batal* - batalkan konfirmasi atau pendataan yang sedang jalan\n*about* - info singkat\n*website* - alamat website\n*delete* - hapus akun`,
     );
     return true;
   }
@@ -5916,6 +6193,22 @@ async function handleCommand(db, client, user, text) {
       );
       return true;
     }
+    // Baris user bisa sudah ada karena operator menambah nomor dari panel atau perintah
+    // admin, jadi profil yang belum lengkap harus didata ulang dari pertanyaan pertama.
+    const profileIncomplete = !user.name || !user.hpht_iso;
+    if (profileIncomplete) {
+      await updateUser(db, user.wa_id, {
+        allow_remindcare: 1,
+        status: "onboarding",
+        onboarding_step: 1,
+      });
+      await sendText(
+        client,
+        user.wa_id,
+        `Pertanyaan 1 dari ${QUESTIONS.length}\n\n${QUESTIONS[0].text}`,
+      );
+      return true;
+    }
     if (!user.reminder_time) {
       await updateUser(db, user.wa_id, {
         allow_remindcare: 1,
@@ -6038,14 +6331,6 @@ async function handleMessage(db, client, msg) {
   if (isUnsupportedDirectTarget(waId)) {
     return;
   }
-  if (!text && msg.hasMedia) {
-    await sendText(
-      client,
-      waId,
-      "Aku belum bisa membaca pesan suara atau gambar. Tolong ketik jawabannya ya.",
-    );
-    return;
-  }
   const rateCheck = checkRateLimit(waId);
   if (!rateCheck.allowed) {
     if (rateCheck.warn) {
@@ -6125,6 +6410,17 @@ async function handleMessage(db, client, msg) {
       client,
       waId,
       `Pertanyaan 1 dari ${QUESTIONS.length}\n\n${QUESTIONS[0].text}`,
+    );
+    return;
+  }
+
+  if (!text && msg.hasMedia) {
+    // Ditaruh setelah gerbang akses supaya nomor asing atau nomor yang diblokir tidak
+    // ikut dipancing membalas oleh nomor bot.
+    await sendText(
+      client,
+      waId,
+      "Aku belum bisa membaca pesan suara atau gambar. Tolong ketik jawabannya ya.",
     );
     return;
   }
@@ -6385,6 +6681,37 @@ function getReminderLoopConcurrency() {
   return rounded;
 }
 
+const reminderTickFailures = new Map();
+
+// Kegagalan tick per user sebelumnya hanya masuk journal. Setelah beberapa kali dalam
+// sehari, kondisi itu butuh perhatian manusia, bukan cuma baris log.
+function noteReminderTickFailure(waId, err) {
+  const key = String(waId || "");
+  if (!key) {
+    return;
+  }
+  const today = toDateKey(nowWib());
+  const entry = reminderTickFailures.get(key);
+  const next =
+    entry && entry.date === today
+      ? { date: today, count: entry.count + 1 }
+      : { date: today, count: 1 };
+  reminderTickFailures.set(key, next);
+  if (reminderTickFailures.size > 500) {
+    for (const [k, v] of reminderTickFailures) {
+      if (v.date !== today) {
+        reminderTickFailures.delete(k);
+      }
+    }
+  }
+  if (next.count === 3) {
+    sendAlert(
+      "pengingat-gagal",
+      `Pengingat untuk ${key} gagal ${next.count} kali hari ini: ${(err && err.message) || err}`,
+    );
+  }
+}
+
 async function processUserReminderTick(db, client, user, now, today) {
   if (isAllowlistEnforced() && !user.is_allowed && !user.is_admin) {
     return;
@@ -6533,6 +6860,7 @@ async function startReminderLoop(db, client) {
               await processUserReminderTick(db, client, user, now, today);
             } catch (err) {
               console.error("Gagal memproses reminder user:", user.wa_id, err);
+              noteReminderTickFailure(user.wa_id, err);
             }
           }),
         );
@@ -6795,10 +7123,20 @@ function sendAlert(kind, detail) {
       console.error("Gagal mengirim alarm ke webhook:", err.message);
     });
   }
+  // Alarm yang hanya duduk di journal tidak akan terbaca saat bot diam, jadi admin
+  // juga dikirimi pesan WhatsApp selama sesi siap dipakai.
+  if (clientReady && sendGuard.isReady() && activeClient) {
+    for (const adminId of ADMIN_WA_IDS) {
+      const target = String(adminId);
+      if (target.endsWith("@c.us")) {
+        sendText(activeClient, target, `ALARM ${kind}: ${detail}`, { kind: "reply" });
+      }
+    }
+  }
   return true;
 }
 
-function startAdminServer(db) {
+async function startAdminServer(db) {
   if (!ADMIN_WEB_ENABLED) {
     return;
   }
@@ -6807,9 +7145,10 @@ function startAdminServer(db) {
     return;
   }
 
-  const passwordConfig = getAdminPasswordConfig();
+  const passwordConfig = await resolvePasswordConfig(db);
 
   const app = express();
+  app.disable("x-powered-by");
   if (ADMIN_WEB_TRUST_PROXY) {
     app.set("trust proxy", true);
   }
@@ -6872,7 +7211,7 @@ function startAdminServer(db) {
         (req.body && req.body._csrf) ||
         "",
     );
-    if (!sent || sent !== session.csrf) {
+    if (!sent || !isPasswordMatch(sent, session.csrf)) {
       res.status(403).json({ ok: false, error: "csrf" });
       return;
     }
@@ -6923,6 +7262,22 @@ function startAdminServer(db) {
     const username = String(req.body.username || "").trim();
     const password = String(req.body.password || "");
 
+    // Form login tidak memakai token CSRF, jadi asal permintaan diperiksa: browser
+    // selalu mengirim Origin atau Referer, sedangkan situs lain tidak boleh memasukkan
+    // korban ke sesi yang tidak dia sadari.
+    const origin = String(req.headers.origin || "");
+    const referer = String(req.headers.referer || "");
+    const host = String(req.headers.host || "");
+    const fromPanel = (!origin && !referer) || [origin, referer].some((value) => value && value.includes(host));
+    if (!fromPanel) {
+      res.status(403).send(
+        renderAdminLoginPage("Permintaan masuk harus dari halaman panel.", {
+          nonce: res.locals.nonce,
+        }),
+      );
+      return;
+    }
+
     const gate = checkAdminLoginAllowed(ip);
     if (!gate.allowed) {
       res
@@ -6951,7 +7306,8 @@ function startAdminServer(db) {
     }
 
     clearAdminLoginFailures(ip);
-    const session = createAdminSession();
+    await refreshPasswordEpoch(db);
+    const session = createAdminSession(req);
     setAdminCookie(res, session.token);
     res.redirect("/admin");
   });
@@ -7095,7 +7451,7 @@ function startAdminServer(db) {
 
   app.get("/admin/api/allowlist", requireAdmin, async (req, res) => {
     try {
-      res.json({ ok: true, panel: listPanelAllowedNumbers(), env: listEnvAllowedNumbers() });
+      res.json({ ok: true, panel: serializeAllowlistPanel(), env: listEnvAllowedNumbers() });
     } catch (err) {
       console.error("Kesalahan pada API admin:", err);
       res.status(500).json({ ok: false, error: "failed" });
@@ -7109,7 +7465,9 @@ function startAdminServer(db) {
         res.status(400).json({ ok: false, error: "Aksi tidak dikenal" });
         return;
       }
-      const waId = normalizeOperatorNumber(req.body ? req.body.wa_id : "");
+      const rawInput = String((req.body && req.body.wa_id) || "").trim();
+      const looksLikeId = /^[0-9A-Za-z@._:-]{3,64}$/.test(rawInput) && rawInput.includes("@");
+      const waId = normalizeOperatorNumber(rawInput) || (looksLikeId ? rawInput : null);
       if (!waId) {
         res.status(400).json({
           ok: false,
@@ -7130,7 +7488,7 @@ function startAdminServer(db) {
           wa_id: waId,
           already: already || fromEnv,
           from_env: fromEnv,
-          panel: listPanelAllowedNumbers(),
+          panel: serializeAllowlistPanel(),
           env: listEnvAllowedNumbers(),
         });
         return;
@@ -7154,7 +7512,7 @@ function startAdminServer(db) {
         existed,
         revoked,
         from_env: fromEnv,
-        panel: listPanelAllowedNumbers(),
+        panel: serializeAllowlistPanel(),
         env: listEnvAllowedNumbers(),
       });
     } catch (err) {
@@ -7489,6 +7847,15 @@ function startAdminServer(db) {
     },
   );
 
+  const passwordWatch = setInterval(() => {
+    refreshPasswordEpoch(db).catch((err) => {
+      console.error("Gagal memeriksa hash password admin:", err.message);
+    });
+  }, 5 * 60 * 1000);
+  if (typeof passwordWatch.unref === "function") {
+    passwordWatch.unref();
+  }
+
   const server = app.listen(ADMIN_WEB_PORT, ADMIN_WEB_HOST, () => {
     console.log(
       `Admin web berjalan di http://${ADMIN_WEB_HOST}:${ADMIN_WEB_PORT}/admin`,
@@ -7599,9 +7966,26 @@ async function main() {
   await loadRuntimeSettings(db);
   const integrity = await checkDbIntegrity(db);
   if (!integrity.ok) {
+    // Menulis ke DB yang sudah rusak memperparah korupsi, jadi pengiriman ditahan
+    // sampai operator memulihkan dari backup.
     sendAlert("database", `integrity_check: ${integrity.result}`);
+    sendGuard.pause(365 * 24 * 60 * 60 * 1000, "database tidak sehat, menunggu pemulihan");
+    console.error(
+      "Pengiriman ditahan: integrity_check gagal. Pulihkan dari backup lalu jalankan ulang.",
+    );
   }
-  startAdminServer(db);
+  await startAdminServer(db);
+
+  const maintenanceTimer = setInterval(() => {
+    const removed = pruneRateLimitState();
+    pruneAdminLoginAttempts();
+    if (removed > 0) {
+      console.log(`Membersihkan ${removed} entri rate limit kadaluarsa.`);
+    }
+  }, 30 * 60 * 1000);
+  if (typeof maintenanceTimer.unref === "function") {
+    maintenanceTimer.unref();
+  }
 
   const executablePath = findBrowserExecutable();
   if (executablePath) {
@@ -7722,12 +8106,6 @@ async function main() {
     console.error("TERPUTUS dari WhatsApp:", reason);
   });
 
-  client.on("message_ack", (msg, ack) => {
-    if (msg && msg.id) {
-      lastAckByMessageId.set(msg.id._serialized, ack);
-    }
-  });
-
   client.on("message", async (msg) => {
     try {
       await handleMessage(db, client, msg);
@@ -7748,8 +8126,21 @@ async function main() {
 }
 
 if (require.main === module) {
+  // Tanpa handler ini Node 22 mematikan proses tanpa jejak yang jelas, dan shutdown
+  // rapi belum terpasang pada kegagalan dini.
+  process.on("unhandledRejection", (err) => {
+    console.error("Promise ditolak tanpa penanganan:", err);
+    sendAlert("promise-gagal", String((err && err.message) || err));
+  });
+  process.on("uncaughtException", (err) => {
+    console.error("Kesalahan tak tertangani:", err);
+    sendAlert("kesalahan-fatal", String((err && err.message) || err));
+    process.exitCode = 1;
+    setTimeout(() => process.exit(1), 1000);
+  });
   main().catch((err) => {
     console.error("RemindCare gagal dijalankan:", err);
+    process.exit(1);
   });
 }
 
@@ -7757,6 +8148,9 @@ module.exports = {
   pairingOptions,
   // jembatan uji: hanya untuk menguji siklus hidup sesi admin tanpa membuka server
   __createAdminSessionForTest: createAdminSession,
+  __openDbForTest: openDb,
+  __initDbForTest: initDb,
+  __startAdminServerForTest: startAdminServer,
   __destroyAdminSessionForTest: destroyAdminSession,
   __peekAdminSessionForTest: (token) => (token ? adminSessions.get(token) || null : null),
   renderAdminLoginPage,
@@ -7795,9 +8189,22 @@ module.exports = {
   getDeliveryValidationStageDue,
   buildLaborPhaseMessage,
   parseDeliveryValidationAnswer,
+  stripTrailingPunctuation,
+  reminderSchedulePhrase,
+  serializeAllowlistPanel,
+  normalizeWaIdInput,
+  handleAdminCommand,
+  getAdminSession,
+  refreshPasswordEpoch,
+  checkRateLimit,
+  pruneRateLimitState,
+  pruneAdminLoginAttempts,
+  isLiveInstancePid,
+  csvEscape,
   getDeliveryDateTime,
   getPostpartumDueAt,
   buildPostpartumSnapshot,
+  buildPostpartumVisitQuestion,
   getRetryDelayMs,
   canAttemptByBackoff,
   validateDeliveryDateIso,
