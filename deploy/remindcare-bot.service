@@ -17,6 +17,19 @@ ExecStart=/usr/bin/node index.js
 # terlalu cepat saat sesi WhatsApp bermasalah (pemindaian QR berulang itu sinyal).
 Restart=always
 RestartSec=30
+# Bot mengirim pesan dan menyimpan data kesehatan, jadi haknya dipersempit. Chromium perlu
+# menulis ke profil Puppeteer dan direktori sesi WhatsApp, itulah bagian yang dibuka.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+MemoryMax=1500M
+# Tanda minus di depan path berarti abaikan kalau direktorinya belum ada.
+ReadWritePaths=-/opt/remindcare/data -/opt/remindcare/.wwebjs_auth -/opt/remindcare/.wwebjs_cache -/opt/remindcare/.config -/home/remindcare/.cache -/home/remindcare/.config
 # Beri waktu shutdown rapi (menutup DB dan melepas lock instance).
 KillSignal=SIGTERM
 TimeoutStopSec=60

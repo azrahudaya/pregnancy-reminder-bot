@@ -4,9 +4,10 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node tests/parse.test.js && node tests/send-guard.test.js && node tests/hardening.test.js && node tests/p1-hardening.test.js && node tests/p2-hardening.test.js && node tests/p4-hardening.test.js && node tests/p3-hardening.test.js && node tests/pairing.test.js && node tests/fix-reminder.test.js && node tests/expose-function.test.js",
+    "test": "node tests/parse.test.js && node tests/send-guard.test.js && node tests/hardening.test.js && node tests/p1-hardening.test.js && node tests/p2-hardening.test.js && node tests/p4-hardening.test.js && node tests/p3-hardening.test.js && node tests/pairing.test.js && node tests/fix-reminder.test.js && node tests/expose-function.test.js && node tests/flows.test.js && node tests/admin-http.test.js && node tests/watchdog.test.js",
     "backup": "node scripts/backup-db.js",
-    "postinstall": "patch-package"
+    "postinstall": "patch-package",
+    "watchdog": "node scripts/watchdog.js"
   },
   "keywords": [
     "whatsapp",

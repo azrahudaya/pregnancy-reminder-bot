@@ -1,0 +1,12 @@
+[Unit]
+Description=Jalankan penjaga RemindCare tiap 5 menit
+Documentation=file:/opt/remindcare/deploy/INSTALL.md
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=5min
+AccuracySec=30s
+Unit=remindcare-watchdog.service
+
+[Install]
+WantedBy=timers.target

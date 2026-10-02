@@ -144,6 +144,7 @@ let lastBreakerTrips = 0;
 const adminLoginAttempts = new Map();
 let reminderLoopRunning = false;
 let lastCleanupDate = null;
+let lastFollowUpDate = null;
 const rateLimitState = new Map();
 const adminSessions = new Map();
 const deleteConfirmState = new Map();
@@ -3243,6 +3244,12 @@ async function ensureUserColumns(db) {
   await ensureColumn(
     db,
     "users",
+    "last_onboarding_nudge_date",
+    "last_onboarding_nudge_date TEXT",
+  );
+  await ensureColumn(
+    db,
+    "users",
     "last_reminder_text_date",
     "last_reminder_text_date TEXT",
   );
@@ -4201,6 +4208,19 @@ function buildNeedsAction(users) {
       if (status === "paused" || Number(user.allow_remindcare) === 0) {
         return { code: "paused", text: "Pengingat sedang dijeda", action: "Lanjutkan" };
       }
+      if (status === "active" && Number(user.is_admin) !== 1 && user.reminder_time) {
+        const cutoff = toDateKey(nowWib().minus({ days: SILENT_USER_DAYS }));
+        // Patokan diamnya adalah jawaban terakhir. Yang belum pernah menjawab dipatok dari
+        // pengingat pertama, supaya pasien baru tidak langsung dicap berhenti menjawab.
+        const sejak = String(user.last_response_date || user.first_reminder_date || "");
+        if (sejak && sejak < cutoff) {
+          return {
+            code: "no_answer",
+            text: `Tidak ada jawaban sejak ${sejak}`,
+            action: "Hubungi lewat WhatsApp",
+          };
+        }
+      }
       const failCount = Math.max(
         Number(user.fe_poll_fail_count || 0),
         Number(user.delivery_poll_fail_count || 0),
@@ -4333,6 +4353,7 @@ async function getAdminUsers(db) {
       COALESCE(pv.postpartum_belum, 0) as postpartum_belum,
       rl_last.reminder_date as last_response_date,
       rl_last.response as last_response,
+      rl_first.reminder_date as first_reminder_date,
       COALESCE(agg.total_logs, 0) as total_logs,
       COALESCE(agg.total_answered, 0) as total_answered,
       COALESCE(agg.total_sudah, 0) as total_sudah,
@@ -4360,6 +4381,13 @@ async function getAdminUsers(db) {
        ON rl_last.wa_id = u.wa_id
        AND rl_last.reminder_date = (
          SELECT MAX(reminder_date)
+         FROM reminder_logs
+         WHERE wa_id = u.wa_id
+       )
+     LEFT JOIN reminder_logs rl_first
+       ON rl_first.wa_id = u.wa_id
+       AND rl_first.reminder_date = (
+         SELECT MIN(reminder_date)
          FROM reminder_logs
          WHERE wa_id = u.wa_id
        )
@@ -6803,6 +6831,132 @@ async function processUserReminderTick(db, client, user, now, today) {
   });
 }
 
+const ONBOARDING_NUDGE_AFTER_HOURS = 24;
+const ONBOARDING_STUCK_HOURS = 72;
+const SILENT_USER_DAYS = 3;
+
+// Denyut proses ditulis berkala supaya penjaga di luar proses (scripts/watchdog.js) bisa
+// membedakan bot yang berjalan dari proses yang menggantung. Kalau event loop macet,
+// berkas ini ikut berhenti diperbarui.
+function writeHeartbeat(extra) {
+  const payload = {
+    at: nowWib().toISO(),
+    ready: clientReady === true,
+    paused: sendGuard.isPaused(),
+    pid: process.pid,
+    ...(extra || {}),
+  };
+  const target = path.join(DATA_DIR, "heartbeat.json");
+  try {
+    fs.writeFileSync(target + ".tmp", JSON.stringify(payload), { mode: 0o600 });
+    fs.renameSync(target + ".tmp", target);
+  } catch (err) {
+    console.error("Gagal menulis denyut proses:", err.message);
+  }
+  return payload;
+}
+
+// Dua kegagalan senyap yang paling mahal untuk program pengingat: ibu yang berhenti di
+// tengah pendataan (tidak pernah dapat pengingat sama sekali) dan ibu yang berhenti
+// menjawab (pengingat jalan tetapi tidak ada yang terpantau). Keduanya harus muncul,
+// bukan menunggu operator menebak dari angka nol.
+async function runDailyFollowUps(db, client, now, today) {
+  const nudgeCutoff = now.minus({ hours: ONBOARDING_NUDGE_AFTER_HOURS }).toISO();
+  const stuckCutoff = now.minus({ hours: ONBOARDING_STUCK_HOURS }).toISO();
+  const silentCutoff = toDateKey(now.minus({ days: SILENT_USER_DAYS }));
+  let nudged = 0;
+  const stuck = [];
+  const silent = [];
+  try {
+    const onboarding = await dbAll(
+      db,
+      `SELECT * FROM users
+       WHERE status = 'onboarding'
+       AND is_blocked = 0
+       AND is_allowed = 1
+       AND created_at IS NOT NULL
+       AND created_at <= ?
+       AND (last_onboarding_nudge_date IS NULL OR last_onboarding_nudge_date <> ?)`,
+      [nudgeCutoff, today],
+    );
+    for (const user of onboarding) {
+      if (!client) {
+        break;
+      }
+      try {
+        await sendText(
+          client,
+          user.wa_id,
+          "Pendataannya belum selesai, Bu. Ketik *start* supaya RemindCare bisa mulai mengingatkan. Kalau ada kendala, balas *info*.",
+          { kind: "onboarding_nudge" },
+        );
+        await dbRun(db, "UPDATE users SET last_onboarding_nudge_date = ? WHERE wa_id = ?", [
+          today,
+          user.wa_id,
+        ]);
+        nudged += 1;
+        if (user.created_at && String(user.created_at) <= stuckCutoff) {
+          stuck.push(user.wa_id);
+        }
+      } catch (err) {
+        console.error("Gagal mengirim dorongan pendataan:", user.wa_id, err.message);
+      }
+    }
+  } catch (err) {
+    console.error("Gagal mencari pendataan yang berhenti:", err);
+  }
+
+  try {
+    // Tanggal jawaban terakhir tidak disimpan di tabel users, melainkan diambil dari
+    // catatan pengingat, sama seperti yang dipakai panel admin.
+    const active = await dbAll(
+      db,
+      `SELECT * FROM (
+         SELECT u.wa_id AS wa_id,
+                u.last_reminder_date AS last_reminder_date,
+                (SELECT MAX(reminder_date) FROM reminder_logs
+                  WHERE wa_id = u.wa_id AND response IS NOT NULL) AS last_answer_date,
+                (SELECT MIN(reminder_date) FROM reminder_logs
+                  WHERE wa_id = u.wa_id) AS first_reminder_date
+         FROM users u
+         WHERE u.status = 'active'
+         AND u.allow_remindcare = 1
+         AND u.is_blocked = 0
+         AND u.is_admin = 0
+         AND u.reminder_time IS NOT NULL
+         AND u.last_reminder_date IS NOT NULL
+       )
+       WHERE COALESCE(last_answer_date, first_reminder_date) < ?`,
+      [silentCutoff],
+    );
+    for (const user of active) {
+      silent.push(user.wa_id);
+    }
+  } catch (err) {
+    console.error("Gagal mencari pasien yang berhenti menjawab:", err);
+  }
+
+  // Alarm harian supaya daftar ini sampai ke operator tanpa harus membuka panel.
+  if (stuck.length > 0) {
+    sendAlert(
+      "pendataan-berhenti",
+      `${stuck.length} nomor berhenti di tengah pendataan lebih dari ${ONBOARDING_STUCK_HOURS} jam: ${stuck.join(", ")}`,
+    );
+  }
+  if (silent.length > 0) {
+    sendAlert(
+      "pasien-sepi",
+      `${silent.length} pasien tidak menjawab pengingat dalam ${SILENT_USER_DAYS} hari terakhir: ${silent.join(", ")}`,
+    );
+  }
+  if (nudged > 0 || silent.length > 0) {
+    console.log(
+      `Tindak lanjut harian: ${nudged} dorongan pendataan, ${silent.length} pasien perlu dihubungi.`,
+    );
+  }
+  return { nudged, stuck, silent };
+}
+
 async function startReminderLoop(db, client) {
   const timer = setInterval(async () => {
     if (reminderLoopRunning) {
@@ -6840,6 +6994,17 @@ async function startReminderLoop(db, client) {
           console.error("Gagal membersihkan log lama:", err);
         }
         lastCleanupDate = today;
+      }
+
+      // Dorongan dan alarm hanya keluar di dalam jam kirim supaya tidak ada pesan
+      // tengah malam, dan tanggalnya baru dicatat kalau benar-benar sempat jalan.
+      if (lastFollowUpDate !== today && sendGuard.stats().withinSendWindow) {
+        try {
+          await runDailyFollowUps(db, client, now, today);
+          lastFollowUpDate = today;
+        } catch (err) {
+          console.error("Gagal menjalankan tindak lanjut harian:", err);
+        }
       }
 
       const users = await dbAll(
@@ -7119,8 +7284,30 @@ function sendAlert(kind, detail) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(lastAlert),
+      signal: AbortSignal.timeout(Number(process.env.ALERT_TIMEOUT_MS || 10000)),
     }).catch((err) => {
       console.error("Gagal mengirim alarm ke webhook:", err.message);
+    });
+  }
+  // Alarm lewat WhatsApp mati justru pada saat WhatsApp bermasalah, jadi jalur kedua
+  // dipakai lebih dulu: webhook generik, lalu Telegram.
+  const telegramToken = String(process.env.ALERT_TELEGRAM_TOKEN || "").trim();
+  const telegramChat = String(process.env.ALERT_TELEGRAM_CHAT_ID || "").trim();
+  if (telegramToken && telegramChat) {
+    const apiBase = String(
+      process.env.ALERT_TELEGRAM_API_BASE || "https://api.telegram.org",
+    ).replace(/\/+$/, "");
+    fetch(`${apiBase}/bot${telegramToken}/sendMessage`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        chat_id: telegramChat,
+        text: `ALARM ${kind}: ${detail}`,
+        disable_notification: false,
+      }),
+      signal: AbortSignal.timeout(Number(process.env.ALERT_TIMEOUT_MS || 10000)),
+    }).catch((err) => {
+      console.error("Gagal mengirim alarm ke Telegram:", err.message);
     });
   }
   // Alarm yang hanya duduk di journal tidak akan terbaca saat bot diam, jadi admin
@@ -7876,6 +8063,7 @@ async function startAdminServer(db) {
       console.error("Gagal menyimpan hash password admin:", err.message);
     });
   });
+  return server;
 }
 
 // Nilai env angka yang salah tulis pernah mematikan kontrol keamanan secara senyap
@@ -7975,6 +8163,12 @@ async function main() {
     );
   }
   await startAdminServer(db);
+
+  writeHeartbeat({ phase: "start" });
+  const heartbeatTimer = setInterval(() => writeHeartbeat({ phase: "tick" }), 30 * 1000);
+  if (typeof heartbeatTimer.unref === "function") {
+    heartbeatTimer.unref();
+  }
 
   const maintenanceTimer = setInterval(() => {
     const removed = pruneRateLimitState();
@@ -8235,6 +8429,14 @@ module.exports = {
   noteScheduledSend,
   isOverDailyMessageQuota,
   sendAlert,
+  writeHeartbeat,
+  runDailyFollowUps,
+  __handleMessageForTest: handleMessage,
+  __handleAdminCommandForTest: handleAdminCommand,
+  __setSendReadyForTest: (value) => {
+    clientReady = Boolean(value);
+    sendGuard.setReady(Boolean(value));
+  },
   reconcileRunnableUsers,
   buildNeedsAction,
   isReminderControlCommand,

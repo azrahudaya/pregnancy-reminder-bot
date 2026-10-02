@@ -103,6 +103,74 @@ sudo systemctl restart remindcare-bot
 pgrep -a -f chrome-linux64/chrome | grep -c -- "--no-sandbox"   # harus 0
 ```
 
+## Alarm di luar WhatsApp
+
+Alarm dari dalam bot dikirim ke tiga jalur: webhook, Telegram, dan WhatsApp admin. Jalur
+WhatsApp justru mati pada saat WhatsApp bermasalah, jadi isi minimal satu jalur luar:
+
+```bash
+ALERT_WEBHOOK_URL=https://contoh.internal/hooks/remindcare
+# atau
+ALERT_TELEGRAM_TOKEN=123456:ABC...
+ALERT_TELEGRAM_CHAT_ID=123456789
+```
+
+Cara membuat token Telegram: kirim pesan ke @BotFather, buat bot, salin token, lalu kirim
+satu pesan ke bot itu dan ambil `chat_id` dari `https://api.telegram.org/bot<token>/getUpdates`.
+
+## Penjaga luar proses (watchdog)
+
+Bot menulis `data/heartbeat.json` tiap 30 detik. Timer systemd menjalankan
+`scripts/watchdog.js` tiap 5 menit: kalau denyut basi atau sesi WhatsApp belum siap terlalu
+lama, penjaga mengirim alarm lewat jalur luar di atas. Ini menangkap kasus yang tidak
+terlihat dari luar: proses hidup tetapi menggantung.
+
+```bash
+cd /opt/remindcare
+sudo cp deploy/remindcare-watchdog.service /etc/systemd/system/
+sudo cp deploy/remindcare-watchdog.timer /etc/systemd/system/
+# samakan User, Group, dan WorkingDirectory dengan unit bot
+sudo systemctl daemon-reload
+sudo systemctl enable --now remindcare-watchdog.timer
+systemctl list-timers remindcare-watchdog.timer
+journalctl -u remindcare-watchdog -n 20 --no-pager
+```
+
+Uji tanpa mengirim apa pun:
+
+```bash
+sudo -u remindcare node scripts/watchdog.js --dry-run   # harus melaporkan keadaan wajar
+```
+
+Penjaga juga bisa merestart bot sendiri kalau `WATCHDOG_RESTART=1`. Itu butuh izin sempit
+lewat sudoers, bukan sudo penuh:
+
+```bash
+echo 'remindcare ALL=(root) NOPASSWD: /usr/bin/systemctl restart remindcare-bot' \
+  | sudo tee /etc/sudoers.d/remindcare-watchdog
+sudo chmod 0440 /etc/sudoers.d/remindcare-watchdog
+sudo visudo -c
+```
+
+## Mengunci layanan bot (systemd hardening)
+
+Bot ini menjalankan Chromium dan menyimpan data kesehatan, jadi haknya dibatasi. Tambahkan
+ke `[Service]`, lalu `sudo systemctl daemon-reload` dan restart:
+
+```ini
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+MemoryMax=1500M
+```
+
+`ProtectSystem=strict` juga bisa dipakai, tetapi Chromium perlu menulis ke
+`/home/<user>/.cache`, `/home/<user>/.config`, dan direktori sesi WhatsApp, jadi tambahkan
+`ReadWritePaths` untuk ketiganya dan uji ulang sesi WhatsApp setelah restart.
+
 ## Backup di luar VPS
 
 `scripts/backup-db.js` menguji setiap backup (integritas, tabel inti, data terbaca) sebelum
