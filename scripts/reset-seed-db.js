@@ -313,7 +313,7 @@ async function main() {
       pregnancy_number: "G1P0A0",
       hpht: "28-06-2025",
       hpht_iso: "2025-06-28",
-      reminder_person: "RemindCare",
+      reminder_person: "pregnancy-reminder-bot",
       is_admin: 1,
       status: "completed",
       delivery_hpl_poll_sent_date: "2026-03-22",

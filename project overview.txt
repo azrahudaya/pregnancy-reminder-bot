@@ -1,7 +1,7 @@
 ﻿PROJECT OVERVIEW - REMINDCARE WHATSAPP BOT
 
 Ringkasan
-RemindCare adalah bot WhatsApp berbasis Node.js untuk mendampingi ibu hamil.
+pregnancy-reminder-bot adalah bot WhatsApp berbasis Node.js untuk mendampingi ibu hamil.
 Fokus utamanya adalah pengingat konsumsi tablet FE harian, pencatatan jawaban
 "Sudah" atau "Belum", edukasi menjelang persalinan, validasi apakah user sudah
 melahirkan, pendataan persalinan, serta reminder kunjungan masa nifas dan
@@ -137,7 +137,7 @@ Alur:
 2. Bot mengirim pertanyaan onboarding pertama.
 3. User menjawab pertanyaan secara berurutan.
 4. Jawaban divalidasi sesuai tipe data.
-5. Jika user menolak diingatkan oleh RemindCare, status menjadi active tetapi
+5. Jika user menolak diingatkan oleh pregnancy-reminder-bot, status menjadi active tetapi
    reminder_time dikosongkan dan reminder tidak aktif.
 6. Jika onboarding selesai, status menjadi active, reminder_time tersimpan, dan
    bot mengirim konfirmasi jadwal reminder.
@@ -150,7 +150,7 @@ Pertanyaan Onboarding
 5. Apakah rutin mengonsumsi obat.
 6. Apakah masih mengonsumsi teh.
 7. Siapa yang biasanya mengingatkan minum obat.
-8. Apakah mau diingatkan RemindCare.
+8. Apakah mau diingatkan pregnancy-reminder-bot.
 9. Jam reminder harian.
 
 Flow Pesan Pembuka
@@ -158,7 +158,7 @@ Trigger:
 - Nomor baru mengirim pesan apa pun selain start/mulai.
 
 Alur:
-1. Bot mengirim perkenalan singkat RemindCare.
+1. Bot mengirim perkenalan singkat pregnancy-reminder-bot.
 2. Bot meminta user mengetik start.
 3. User belum masuk onboarding sebelum mengirim start/mulai.
 

@@ -1,5 +1,5 @@
 [Unit]
-Description=Jalankan backup RemindCare setiap hari
+Description=Jalankan backup pregnancy-reminder-bot setiap hari
 
 [Timer]
 OnCalendar=*-*-* 03:30:00

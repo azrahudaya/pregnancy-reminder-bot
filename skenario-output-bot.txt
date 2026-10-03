@@ -12,7 +12,7 @@ User:
 start
 
 Bot:
-Halo, aku RemindCare. Boleh tau nama ibu?
+Halo, aku pregnancy-reminder-bot. Boleh tau nama ibu?
 
 User:
 Siti
@@ -54,19 +54,19 @@ User:
 suami
 
 Bot:
-Mau diingatkan RemindCare untuk minum obat? (ya/tidak)
+Mau diingatkan pregnancy-reminder-bot untuk minum obat? (ya/tidak)
 
 User:
 ya
 
 Bot:
-RemindCare bakal mengingatkan tiap hari lewat WhatsApp. Mau diingatkan setiap jam berapa? (format 24 jam, contoh 17:00)
+pregnancy-reminder-bot bakal mengingatkan tiap hari lewat WhatsApp. Mau diingatkan setiap jam berapa? (format 24 jam, contoh 17:00)
 
 User:
 19:00
 
 Bot:
-Siap! RemindCare akan mengingatkan setiap hari jam 19:00 WIB.
+Siap! pregnancy-reminder-bot akan mengingatkan setiap hari jam 19:00 WIB.
 
 
 ============================================================
@@ -202,9 +202,9 @@ Terima kasih, data persalinan sudah dicatat. Jika ada perubahan, ketik *menu* un
 
 Bot:
 Selamat atas kelahiran buah hati, Siti.
-RemindCare akan terus menemani Ibu sampai masa krusial ini selesai.
+pregnancy-reminder-bot akan terus menemani Ibu sampai masa krusial ini selesai.
 Masa nifas dan masa neonatal adalah masa yang sangat penting bagi ibu dan bayi. Pada periode ini, risiko gangguan kesehatan masih tinggi sehingga pemantauan rutin sangat diperlukan untuk memastikan ibu dan bayi dalam kondisi sehat.
-RemindCare akan mengingatkan jadwal kunjungan KF dan KN sesuai waktu yang dianjurkan.
+pregnancy-reminder-bot akan mengingatkan jadwal kunjungan KF dan KN sesuai waktu yang dianjurkan.
 Baca artikel lanjutan di: https://remindcares.web.app
 
 
@@ -270,7 +270,7 @@ Bot:
 Terima kasih, jawaban KF 4 sudah dicatat.
 
 Bot:
-Selamat, kunjungan KF 4 sudah tercatat. Program RemindCare selesai, jadi pengingat tablet FE tidak akan dikirim lagi. Jika ada program atau kehamilan baru, ketik *edit data* untuk isi ulang dari awal.
+Selamat, kunjungan KF 4 sudah tercatat. Program pregnancy-reminder-bot selesai, jadi pengingat tablet FE tidak akan dikirim lagi. Jika ada program atau kehamilan baru, ketik *edit data* untuk isi ulang dari awal.
 
 Kondisi setelah itu:
 - status user = completed.

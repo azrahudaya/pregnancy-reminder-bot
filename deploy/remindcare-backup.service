@@ -1,5 +1,5 @@
 [Unit]
-Description=Backup harian database RemindCare
+Description=Backup harian database pregnancy-reminder-bot
 After=remindcare-bot.service
 
 [Service]

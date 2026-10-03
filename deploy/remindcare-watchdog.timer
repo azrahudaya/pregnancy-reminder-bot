@@ -1,5 +1,5 @@
 [Unit]
-Description=Jalankan penjaga RemindCare tiap 5 menit
+Description=Jalankan penjaga pregnancy-reminder-bot tiap 5 menit
 Documentation=file:/opt/remindcare/deploy/INSTALL.md
 
 [Timer]

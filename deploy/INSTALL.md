@@ -2,6 +2,13 @@
 
 Perintah di bawah dijalankan sebagai user yang akan menjalankan bot (contoh: `ubuntu`).
 
+Catatan nama: nama berkas unit (`remindcare-bot.service` dan kawan-kawan), jalur
+`/opt/remindcare`, nama berkas basis data, dan `WA_CLIENT_ID` sengaja tidak ikut memakai nama
+produk ini, supaya cocok dengan pemasangan yang sudah berjalan di VPS. Menggantinya harus
+dikerjakan bersamaan: ganti nama unit, pindahkan folder aplikasi, pindahkan basis data, lalu
+taut ulang sesi WhatsApp (client id menentukan nama folder sesi, jadi mengubahnya membuat
+sesi lama tidak terbaca).
+
 ```bash
 sudo mkdir -p /opt/remindcare
 sudo chown "$USER":"$USER" /opt/remindcare

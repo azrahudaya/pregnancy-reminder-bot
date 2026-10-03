@@ -1,5 +1,5 @@
 [Unit]
-Description=RemindCare WhatsApp Bot
+Description=pregnancy-reminder-bot WhatsApp Bot
 Documentation=file:/opt/remindcare/README.md
 After=network-online.target
 Wants=network-online.target

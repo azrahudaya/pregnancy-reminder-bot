@@ -1,5 +1,5 @@
 [Unit]
-Description=RemindCare watchdog (periksa denyut bot dari luar proses)
+Description=pregnancy-reminder-bot watchdog (periksa denyut bot dari luar proses)
 Documentation=file:/opt/remindcare/deploy/INSTALL.md
 After=remindcare-bot.service
 Wants=remindcare-bot.service

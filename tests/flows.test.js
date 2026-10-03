@@ -21,11 +21,25 @@ process.env.SEND_MIN_GAP_MS = "5";
 process.env.SEND_JITTER_MS = "5";
 process.env.REPLY_MIN_GAP_MS = "5";
 process.env.REPLY_JITTER_MS = "5";
+// Jendela kirim dibuka penuh supaya tes tidak bergantung jam saat dijalankan.
+process.env.SEND_WINDOW_START_HOUR = "0";
+process.env.SEND_WINDOW_END_HOUR = "23";
+process.env.SEND_WINDOW_END_MINUTE = "59";
 process.env.ALERT_COOLDOWN_MS = "0";
 
 const mod = require("../index.js");
 
 const ADMIN = "6282240269818@c.us";
+
+// Bot memakai tanggal WIB, jadi tanggal di tes harus dihitung di zona yang sama.
+// Memakai tanggal UTC membuat tes ini gagal setiap pukul 00:00 sampai 07:00 WIB.
+function wibDay(offsetDays = 0) {
+  return require("luxon")
+    .DateTime.now()
+    .setZone("Asia/Jakarta")
+    .minus({ days: offsetDays })
+    .toISODate();
+}
 
 async function test(name, fn) {
   try {
@@ -209,8 +223,8 @@ async function run2() {
   });
 
   await test("kepatuhan 7 hari dihitung dari catatan pengingat nyata", async () => {
-    const hariIni = new Date().toISOString().slice(0, 10);
-    const kemarin = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const hariIni = wibDay();
+    const kemarin = wibDay(1);
     // Kepatuhan hanya menghitung pasien, jadi akun admin dan pasiennya dibuat eksplisit.
     for (const wa of ["6285700000003@c.us", "6285700000004@c.us", "6285700000005@c.us"]) {
       await run(
@@ -268,7 +282,7 @@ async function run2() {
       db,
       require("luxon").DateTime.now().setZone("Asia/Jakarta"),
     );
-    assert.ok(/Ringkasan RemindCare/.test(teks), teks);
+    assert.ok(/Ringkasan pregnancy-reminder-bot/.test(teks), teks);
     assert.ok(/Pengingat terkirim minggu ini: \d+/.test(teks), teks);
     assert.ok(!/\u2014/.test(teks), "tidak boleh ada em dash");
     assert.ok(!/undefined|NaN/.test(teks), teks);
@@ -325,7 +339,7 @@ async function run2() {
     ]);
     assert.strictEqual(item.length, 1);
     assert.strictEqual(item[0].reason, "no_answer");
-    const hariIni = new Date().toISOString().slice(0, 10);
+    const hariIni = wibDay();
     const masihRajin = mod.buildNeedsAction([
       {
         wa_id: "6285711113333@c.us",
@@ -392,13 +406,13 @@ async function run2() {
         `INSERT OR REPLACE INTO users (wa_id, name, status, onboarding_step, is_admin, is_allowed,
           is_blocked, allow_remindcare, reminder_time, last_reminder_date, created_at, updated_at)
          VALUES ('6285700000002@c.us', 'Pasien Baru', 'active', 9, 0, 1, 0, 1, '19:00', ?, ?, ?)`,
-        [new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10), nowIso, nowIso],
+        [wibDay(1), nowIso, nowIso],
       );
       await run(
         db,
         `INSERT OR REPLACE INTO reminder_logs (wa_id, reminder_date, response, created_at)
          VALUES ('6285700000002@c.us', ?, NULL, ?)`,
-        [new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10), nowIso],
+        [wibDay(1), nowIso],
       );
       const hasil = await mod.runDailyFollowUps(
         db,
